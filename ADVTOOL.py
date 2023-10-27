@@ -10,11 +10,14 @@ from matplotlib.pyplot import axes, figure
 from openpyxl.styles import PatternFill, Alignment, Font, Border, Side
 
 from HealthSubCentreVal import *
-# from PrimaryHealthCentre import *
+from PrimaryHealthCentre import *
 from SubDistrictHospitalVal import *
 from DistrictHospitalVal import *
-# from CommunityHealthCentreVal import *
-from After_Upload import *
+from CommunityHealthCentreVal import *
+
+from After_Upload_New import *
+from Downloader import *
+from Validater import *
 
 from pandas.io.formats import style
 import openpyxl
@@ -24,6 +27,11 @@ import tempfile
 from collections import Counter
 # import xlsxwriter
 # from random import randint
+
+#!###########################################################
+### SQL Imports
+
+#!###########################################################
 
 
 # # ## PROGRESS BAR
@@ -1214,6 +1222,20 @@ class Ui_TabWidget(QWidget):
 
         QtCore.QMetaObject.connectSlotsByName(TabWidget)
 
+
+    ##! ********************************************************************************************
+    ##! Use this function To attach files to the exe file (eg - png, txt, jpg etc) using pyinstaller
+    ##! ********************************************************************************************
+    def resource_path(self, relative_path):
+        """ Get absolute path to resource, works for dev and for PyInstaller """
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relative_path)
+
+
     def retranslateUi(self, TabWidget):
         _translate = QtCore.QCoreApplication.translate
         TabWidget.setWindowTitle(_translate("TabWidget", "ADVTool"))
@@ -1279,247 +1301,336 @@ class Ui_TabWidget(QWidget):
         TabWidget.setTabText(TabWidget.indexOf(self.tab1), _translate("TabWidget", "Hindi Version"))
 
 
+    ##! ******************************************************************************************** 
+    ##! Use this function To attach files to the exe file (eg - png, txt, jpg etc) using pyinstaller
+    ##! ********************************************************************************************
+    def resource_path(self, relative_path):
+        """ Get absolute path to resource, works for dev and for PyInstaller """
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relative_path)
+
 
     ''' Upload Function '''
     # =====================
 
     def get_file(self):
-        global fileName, df_
+        global fileName, df_, len_df_SummReport, new_header, items_date, unique_list
 
+        ### Calling upload UI 
         click_Upload = Ui_Dialog_Upload()
         click_Upload.exec_()
-        # # Validation for uploaded valid excel file
-        # try:
-            
-        # Filling upload your file in English Version
-        # self.lineEdit.setText(click_Upload.fileName)
-        # # Filling upload your file in Hindi Version
-        # self.lineEdit_9.setText(click_Upload.fileName)
 
         # try:
 
+        ### Check for empty files
         if click_Upload.fileName[0] != "":
             
             if len(click_Upload.fileName) == 1:
                 # Read uploaded excel file
                 df_ = pd.read_excel(click_Upload.fileName[0])
 
-                self.upload()
+                # Dropping last two rows
+                df_.drop(df_.index[[-1, -2]], inplace=True)
+
+                # Extracting string from 1st cell of dataframe
+                str_to_extr_MonthYear = str(df_.iloc[0])
+
+                # grab the first row for the header
+                new_header = df_.iloc[0]
+
+                # #take the data less the header row
+                df_ = df_[0: -1]
+
+                # set the header row as the df header
+                df_.columns = new_header
+
+                # Extracting Month , Year from string
+                results = re.findall(
+                    r"[abceglnoprtuvyADFJMNOS|]{3}[\s-]\d{2,4}", str_to_extr_MonthYear)
+
+                l = df_.columns.values
+                cnt = 0
+                for i in l:
+                    if i != 'M1 [Ante Natal Care (ANC)]':
+                        cnt += 1
+                    else:
+                        break
+
+                # Partial list of headers
+                lst1 = df_.columns[:cnt].values
+
+                # Picking row items after 18th row to merge with lst1
+                lst2 = df_.iloc[1, cnt:].values.tolist()
+
+                # Merging both lists
+                lst3 = np.concatenate((lst1, lst2))
+
+                # Assign lst3 as new column header
+                df_.columns = lst3
+
+                # Taking DataFrame from second row
+                df_ = df_[3:]
+
+                # Reindexing dataframe
+                df_ = df_.reset_index(drop=True)
+
+                df_ = df_.iloc[:, 1:]
+
+                ###! --- Removing Duplicate Columns ---
+                df_ = df_.loc[~df_.index.duplicated(keep='first')]
+
+                ### Add a new column as date in the dataframe
+                df_['DATE'] = results[0]
+
+                # df_ = df_.set_index('DATE')
+
+                len_df_SummReport = len(df_.columns)
+
+                # Disabling upload Button
+                self.pushButton.setDisabled(True)
+
+                # list_set = df_['Facility Type'].tolist()
+                # unique_list = list(set(list_set))
+
+                list_set = df_['Facility Type'].value_counts()
+                unique_list = list_set.idxmax()
+
 
             elif len(click_Upload.fileName) > 1:
                 # list of excel files we want to merge.
                 # pd.read_excel(file_path) reads the
                 # excel data into pandas dataframe.
-                
 
                 for i in range(len(click_Upload.fileName)):
+
                     if i == 0:
-                        df_ = pd.read_excel(click_Upload.fileName[0])
-                        df_ = df_[:-3]
-                        print('---------------- i == 0 ----------------------')
+
+                        df_ = pd.read_excel(click_Upload.fileName[0])    ### File reading
+
+                        # Dropping last two rows
+                        df_.drop(df_.index[[-1, -2]], inplace=True)
+
+                        # Extracting string from 1st cell of dataframe
+                        str_to_extr_MonthYear = str(df_.iloc[0])
+
+                        # grab the first row for the header
+                        new_header = df_.iloc[0]
+
+                        # #take the data less the header row
+                        df_ = df_[0: -1]
+
+                        # set the header row as the df header
+                        df_.columns = new_header
+
+                        # Extracting Month , Year from string
+                        results = re.findall(
+                            r"[abceglnoprtuvyADFJMNOS|]{3}[\s-]\d{2,4}", str_to_extr_MonthYear)
+
+
+                        l = df_.columns.values
+                        cnt = 0
+                        for i in l:
+                            if i != 'M1 [Ante Natal Care (ANC)]':
+                                cnt += 1
+                            else:
+                                break
+
+                        # Partial list of headers
+                        lst1 = df_.columns[:cnt].values
+
+                        # Picking row items after 18th row to merge with lst1
+                        lst2 = df_.iloc[1, cnt:].values.tolist()
+
+                        # Merging both lists
+                        lst3 = np.concatenate((lst1, lst2))
+
+                        # Assign lst3 as new column header
+                        df_.columns = lst3
+
+                        # Taking DataFrame from second row
+                        df_ = df_[3:]
+
+                        # Reindexing dataframe
+                        df_ = df_.reset_index(drop=True)
+
+                        df_ = df_.iloc[:, 1:]
+
+                        ###! --- Removing Duplicate Columns ---
+                        # df_ = df_.loc[~df_.index.duplicated(keep='first')]
+                        df_ = df_.loc[:,~df_.columns.duplicated()].copy()
+
+                        ### Add a new column as date in the dataframe
+                        df_['DATE'] = results[0]
+
+                        try:
+                            df_.rename(columns={df_.filter(regex='^([S][u][b][-][D][i][s][t][r][i][c][t]) .*([N][a][m][e])|^ +([S][u][b][-][D][i][s][t][r][i][c][t]).* ([N][a][m][e])|^([S][u][b][-][D][i][s][t][r][i][c][t]) .*([N][a][m][e])|^ ([S][u][b][-][D][i][s][t][r][i][c][t]).* ([N][a][m][e])/i').columns[0]: 'Sub-District Name',},inplace=True)
+                        except:
+                            df_.rename(columns={df_.filter(regex='^([S][u][b][-][D][i][v][i][s][i][o][n]) .*([N][a][m][e])|^ +([S][u][b][-][D][i][v][i][s][i][o][n]).* ([N][a][m][e])|^([S][u][b][-][D][i][v][i][s][i][o][n]) .*([N][a][m][e])|^ ([S][u][b][-][D][i][v][i][s][i][o][n]).* ([N][a][m][e])/i').columns[0]: 'Sub-District Name',},inplace=True)
+                        finally:
+                            pass
+
+                        # df_ = df_.set_index('DATE')
+
+                        # Disabling upload Button
+                        self.pushButton.setDisabled(True)
+
+                        list_set = df_['Facility Type'].tolist()
+                        unique_list = list(set(list_set))
+
+
                     elif i > 0:
                         print('---------------- i > 0 ------------------------')
                     
                         dff_ = pd.read_excel(click_Upload.fileName[i])
-                        i+=1
-                        dff_ = dff_[5:-3]
-                        df_ = df_.append(dff_)
 
-                # concatenate all DataFrames in the list
-                # into a single DataFrame, returns new
-                # DataFrame.
-                # df_ = pd.concat(ex, ignore_index=True)
+                        try:
+                            # Dropping last two rows
+                            dff_.drop(dff_.index[[-1, -2]], inplace=True)
+                        except:
+                            pass
 
-                self.upload()
+                        # Extracting string from 1st cell of dataframe
+                        str_to_extr_MonthYear = str(dff_.iloc[0])
 
-            # except:
-            #     msg = QMessageBox()
-            #     msg.setWindowTitle("Uploaded File Error Message / अपलोड की गई फ़ाइल त्रुटि संदेश")
-            #     msg.setIcon(QMessageBox.Critical)
-            #     msg.setText(
-            #         "The file which you have uploaded is not in the valid format of excel, Please upload valid excel file \n\n आपके द्वारा अपलोड की गई फ़ाइल एक्सेल के मान्य प्रारूप में नहीं है, कृपया मान्य एक्सेल फ़ाइल अपलोड करें")
-            #     msg.exec()
+                        # grab the first row for the header
+                        new_header = dff_.iloc[0]
 
-        # except:
-        #     pass
-   
+                        # #take the data less the header row
+                        dff_ = dff_[0: -1]
 
-    def upload(self):
-        global df_, res_dict, len_df_SummReport, new_header
+                        # set the header row as the df header
+                        dff_.columns = new_header
 
-        # Starting popup
-        # self.popup.start_progress()
+                        # Extracting Month , Year from string
+                        results = re.findall(
+                            r"[abceglnoprtuvyADFJMNOS|]{3}[\s-]\d{2,4}", str_to_extr_MonthYear)
 
-        # Dropping last two rows
-        df_.drop(df_.index[[-1, -2]], inplace=True)
+                        l = dff_.columns.values
+                        cnt = 0
+                        for i in l:
+                            if i != 'M1 [Ante Natal Care (ANC)]':
+                                cnt += 1
+                            else:
+                                break
 
-        # Extracting string from 1st cell of dataframe
-        str_to_extr_MonthYear = str(df_.iloc[0])
+                        # Partial list of headers
+                        lst1 = dff_.columns[:cnt].values
 
-        # grab the first row for the header
-        new_header = df_.iloc[0]
+                        # Picking row items after 18th row to merge with lst1
+                        lst2 = dff_.iloc[1, cnt:].values.tolist()
 
-        # #take the data less the header row
-        df_ = df_[0: -1]
+                        # Merging both lists
+                        lst3 = np.concatenate((lst1, lst2))
 
-        # set the header row as the df header
-        df_.columns = new_header
+                        # Assign lst3 as new column header
+                        dff_.columns = lst3
 
-        # Extracting Month , Year from string
-        results = re.findall(
-            r"[abceglnoprtuvyADFJMNOS|]{3}[\s-]\d{2,4}", str_to_extr_MonthYear)
+                        # Taking DataFrame from second row
+                        dff_ = dff_[3:]
 
-        # # Splitting Month and Year
-        # MYList = results[0].split('-')
+                        # Reindexing dataframe
+                        dff_ = dff_.reset_index(drop=True)
 
-        # cnt_lst1 = [i for i in df_.iteritems() if i == 'M1 [Ante Natal Care (ANC)]']
+                        dff_ = dff_.iloc[:, 1:]
 
-        l = df_.columns.values
-        cnt = 0
-        for i in l:
-            if i != 'M1 [Ante Natal Care (ANC)]':
-                cnt += 1
-            else:
-                break
+                        ###! --- Removing Duplicate Columns ---
+                        # dff_ = dff_.loc[~dff_.index.duplicated(keep='first')]
+                        dff_ = dff_.loc[:,~dff_.columns.duplicated()].copy()
 
-        # Partial list of headers
-        lst1 = df_.columns[:cnt].values
+                        ### Add a new column as date in the dataframe
+                        dff_['DATE'] = results[0]
 
-        # Picking row items after 18th row to merge with lst1
-        lst2 = df_.iloc[1, cnt:].values.tolist()
+                        try:
+                            dff_.rename(columns={dff_.filter(regex='^([S][u][b][-][D][i][s][t][r][i][c][t]) .*([N][a][m][e])|^ +([S][u][b][-][D][i][s][t][r][i][c][t]).* ([N][a][m][e])|^([S][u][b][-][D][i][s][t][r][i][c][t]) .*([N][a][m][e])|^ ([S][u][b][-][D][i][s][t][r][i][c][t]).* ([N][a][m][e])/i').columns[0]: 'Sub-District Name',},inplace=True)
+                        except:
+                            dff_.rename(columns={dff_.filter(regex='^([S][u][b][-][D][i][v][i][s][i][o][n]) .*([N][a][m][e])|^ +([S][u][b][-][D][i][v][i][s][i][o][n]).* ([N][a][m][e])|^([S][u][b][-][D][i][v][i][s][i][o][n]) .*([N][a][m][e])|^ ([S][u][b][-][D][i][v][i][s][i][o][n]).* ([N][a][m][e])/i').columns[0]: 'Sub-District Name',},inplace=True)
+                        finally:
+                            pass
 
-        # Merging both lists
-        lst3 = np.concatenate((lst1, lst2))
+                        # dff_ = dff_.set_index('DATE') 
 
-        # Assign lst3 as new column header
-        df_.columns = lst3
+                        # list_set2 = dff_['Facility Type'].tolist()
+                        # unique_list2 = list(set(list_set2))
 
-        # Taking DataFrame from second row
-        df_ = df_[3:]
+                        list_set2 = dff_['Facility Type'].value_counts()
+                        unique_list2 = list_set2.idxmax()
 
-        # Insering Month and Year to the orignal dataframe
-        # df_.insert(1, 'Month', MYList[0])
-        # df_.insert(2, 'Year', MYList[1])
-
-        # Removing A column named as # coming from orignal data
-        # df_ = df_.loc[:, df_.columns != '#']
-
-        # Reindexing dataframe
-        df_ = df_.reset_index(drop=True)
-
-        df_ = df_.iloc[:, 1:]
-
-        ## Remove nans
-        df_ = df_[df_['Facility Name'] != '']
-
-        # try:
-        list_set = df_['Facility Type'].tolist()
-
-        lst_1 = set(list_set)
-
-        print(lst_1)
-
-        if len(lst_1) > 1:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Critical)
-            msg.setWindowTitle("Uploaded File Error Message / अपलोड की गई फ़ाइल त्रुटि संदेश")
-            msg.setText("Please upload files of only one facility type.")
-            msg.exec()
-        elif len(lst_1) == 1:
-            pass
-
-        # except:
-        #     if len(lst_1) > 1:
-        #         msg = QMessageBox()
-        #         msg.setIcon(QMessageBox.Critical)
-        #         msg.setWindowTitle("Uploaded File Error Message / अपलोड की गई फ़ाइल त्रुटि संदेश")
-        #         msg.setText("Please upload files of only one facility type.")
-        #         msg.exec()
-        #     else:
-        #         msg = QMessageBox()
-        #         msg.setIcon(QMessageBox.Critical)
-        #         msg.setWindowTitle("Uploaded File Error Message / अपलोड की गई फ़ाइल त्रुटि संदेश")
-        #         msg.setText("uploaded file doesn't have Facility Type column, Try another file")
-        #         msg.exec()
-        # finally:
-        #     pass
-
-
-        
-            unique_list = set(list_set)
-
-            # # Temporary column to verify modified checks
-            temp_columns = ['col_' + str(index)
-                            for index in range(1, len(df_.columns)+1)]
+                        if unique_list[0] == unique_list2[0]:
+                            #### merging all the data one by one
+                            df_ = df_.append(dff_)              
+                            len_df_SummReport =  len(df_.columns)
                             
 
-            # Merging and converting temp_columns to orignal header to dictionary
-            res_dict = {temp_columns[i]: df_.columns[i] for i in range(len(temp_columns))}
+                        elif unique_list[0] != unique_list2[0]:
+                            msgg = " can't be merged because it belongs to other facility type."
+                            self.msg = QMessageBox()
+                            # Set the information icon
+                            self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
+                            self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
+                            # Set the main message
+                            self.msg.setText(msgg)
+                            # Set the title of the window
+                            self.msg.setWindowTitle("Success")
+                            # Display the message box
+                            self.msg.show()
+                        else:
+                            pass
 
 
-            # Picking the temporary column names and renaming column headers with it
-            #df_.columns = [i for i in res_dict.keys()]
+            # Reindexing dataframe
+            df_ = df_.reset_index(drop=True)
 
-            # Orignal Header
-            df_OrgHeaders = [i for i in res_dict.values()]
+            # shift column 'Name' to first position
+            first_column = df_.pop('DATE')
+            
+            # insert column using insert(position,column_name,
+            # first_column) function
+            df_.insert(0, 'DATE', first_column)
 
-            try:
-                # Filling Facility Name selected in English Version
-                self.lineEdit_2.setText(["{0}".format(col) for col in unique_list][1])
-                # Filling Month, Year in English Version
-                self.lineEdit_3.setText(results[0])
-                # Filling Facility Name selected in Hindiy Version
-                self.lineEdit_8.setText(["{0}".format(col) for col in unique_list][1])
-                # Filling Month, Year in Hindi Version
-                self.lineEdit_7.setText(results[0])
-            except:
-                # Filling Facility Name selected in English Version
-                self.lineEdit_2.setText(["{0}".format(col) for col in unique_list][0])
-                # Filling Month, Year in English Version
-                self.lineEdit_3.setText(results[0])
-                # Filling Facility Name selected in Hindi Version
-                self.lineEdit_8.setText(["{0}".format(col) for col in unique_list][0])
-                # Filling Month, Year in Hindi Version
-                self.lineEdit_7.setText(results[0])
-            finally:
-                # Create the messagebox object
-                self.msg = QMessageBox()
-                # Set the information icon
-                self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
-                self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
-                # Set the main message
-                self.msg.setText("The file has been uploaded successfully. \n\n फ़ाइल सफलतापूर्वक अपलोड कर दी गई है।")
-                # Set the title of the window
-                self.msg.setWindowTitle("Error...!")
-                # Display the message box
-                self.msg.show()
+            list_date = df_['DATE'].to_numpy()
 
+            items_date = str(set(list_date)).strip("{}")
 
+            # try:
+            # Filling Facility Name selected in English Version
+            # self.lineEdit_2.setText(["{0}".format(col) for col in unique_list])
+            self.lineEdit_2.setText(unique_list)
+            # Filling Month, Year in English Version
+            self.lineEdit_3.setText(items_date)
+            # Filling Facility Name selected in Hindiy Version
+            self.lineEdit_8.setText(unique_list)
+            # Filling Month, Year in Hindi Version
+            self.lineEdit_7.setText(items_date)
 
-            ## Removing null rows
-            # df_ = df_.dropna(how='any',axis=1)
+            # except:
+            #     # Filling Facility Name selected in English Version
+            #     self.lineEdit_2.setText(["{0}".format(col) for col in unique_list])
+            #     # Filling Month, Year in English Version
+            #     self.lineEdit_3.setText(items_date)
+            #     # Filling Facility Name selected in Hindi Version
+            #     self.lineEdit_8.setText(["{0}".format(col) for col in unique_list])
+            #     # Filling Month, Year in Hindi Version
+            #     self.lineEdit_7.setText(items_date)
 
-            len_df_SummReport = len(df_.columns)
-
-            # Disabling upload Button
-            self.pushButton.setDisabled(True)
-            # self.pushButton_5.setDisabled(True)
-
-            # self.popup.close()
-
-            # Create the messagebox object
             self.msg = QMessageBox()
             # Set the information icon
-            self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+            self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
             self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
             # Set the main message
             self.msg.setText("The file has been uploaded successfully. \n\n फ़ाइल सफलतापूर्वक अपलोड कर दी गई है।")
             # Set the title of the window
-            self.msg.setWindowTitle(" ")
+            self.msg.setWindowTitle("Success")
             # Display the message box
             self.msg.show()
-            return df_
 
+        # except:
+        #     pass
+
+    
 
     # Upload file button functionality
     # ================================
@@ -1529,54 +1640,47 @@ class Ui_TabWidget(QWidget):
     # Filtering Facility Type
     # =======================
     def VerifyFType(self):
-        global df, FType, lst_highlight_mandatory_checks
+        global df, FType
         # self.popup.start_progress()
 
-        try:
+        # try:
 
-            FType = self.lineEdit_2.text()
+        FType = self.lineEdit_2.text()
 
-            if (FType == 'Primary Health Centre'):
-                # Signaling PHC_Validate function i.e function where validation checks are present
-                df = PHC_Validate(self, df_)
-                lst_highlight_mandatory_checks = self.lst_highlight_mandatory_checks
+        print(FType)
 
-            elif (FType == 'Health Sub Centre' ):
-                # Signaling HSC_Validate function i.e function where validation checks are present
-                df = HSC_Validate(self, df_)
-                lst_highlight_mandatory_checks = self.lst_highlight_mandatory_checks
+        if (FType == 'Primary Health Centre'):
+            # Signaling PHC_Validate function i.e function where validation checks are present
+            df = PHC_Validate(self, df_)
 
-            elif (FType == 'District Hospital'):
-                df = DH_Validate(self, df_)
-                lst_highlight_mandatory_checks = self.lst_highlight_mandatory_checks
+        elif (FType == 'HWC-SC/SC' ):
+            # Signaling HSC_Validate function i.e function where validation checks are present
+            df = HSC_Validate(self, df_)
 
-            elif (FType == 'Sub District Hospital'):
-                df = SDH_Validate(self, df_)
-                lst_highlight_mandatory_checks = self.lst_highlight_mandatory_checks
+        elif (FType == 'District Hospital'):
+            df = DH_Validate(self, df_)
 
-            elif (FType == 'Community Health Centre'):
-                df = CHC_Validate(self, df_)
-                lst_highlight_mandatory_checks = self.lst_highlight_mandatory_checks
+        elif (FType == 'Sub District Hospital'):
+            df = SDH_Validate(self, df_)
 
-            else:
-                raise Exception('Facility Type Name is not matching')
+        elif (FType == 'Community Health Centre'):
+            df = CHC_Validate(self, df_)
 
-        # self.pushButton_5.setEnabled(False)
-        # self.pushButton_2.setEnabled(False)
-        # self.popup.close()
+        else:
+            raise Exception('Facility Type Name is not matching')
 
-        except:
-            # Create the messagebox object
-            self.msg = QMessageBox()
-            # Set the information icon
-            self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
-            self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
-            # Set the main message
-            self.msg.setText("Please upload the data files!")
-            # Set the title of the window
-            self.msg.setWindowTitle(" ")
-            # Display the message box
-            self.msg.show()
+        # except:
+        #     # Create the messagebox object
+        #     self.msg = QMessageBox()
+        #     # Set the information icon
+        #     self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
+        #     self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:#FF6347; font-family: Arial; font-size:20px;} ")
+        #     # Set the main message
+        #     self.msg.setText("Please upload the data files!")
+        #     # Set the title of the window
+        #     self.msg.setWindowTitle("Warning!")
+        #     # Display the message box
+        #     self.msg.show()
 
 
     '''
@@ -1639,10 +1743,24 @@ class Ui_TabWidget(QWidget):
 
             # app_2 = QtWidgets.QApplication(sys.argv)
             form = ChecklistDialog('State', item, checked=True)
-            if form.exec_() == QtWidgets.QDialog.Accepted:
-                final_list = [str(s) for s in form.choices]
-            elif form.exec_() == QtWidgets.QDialog.Rejected:
-                final_list = [str(s) for s in form.choices]
+
+            try:
+                if form.exec_() == QtWidgets.QDialog.Accepted:
+                    final_list = [str(s) for s in form.choices]
+                elif form.exec_() == QtWidgets.QDialog.Rejected:
+                    final_list = [str(s) for s in form.choices]
+            except:
+                # Create the messagebox object
+                self.msg = QMessageBox()
+                # Set the information icon
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
+                self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
+                # Set the main message
+                self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
+                # Set the title of the window
+                self.msg.setWindowTitle(" ")
+                # Display the message box
+                self.msg.show()
             
             try :
                 self.filterdataState(final_list)
@@ -1650,7 +1768,7 @@ class Ui_TabWidget(QWidget):
                 # Create the messagebox object
                 self.msg = QMessageBox()
                 # Set the information icon
-                self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
                 self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
                 # Set the main message
                 self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
@@ -1666,7 +1784,7 @@ class Ui_TabWidget(QWidget):
             # Create the messagebox object
             self.msg = QMessageBox()
             # Set the information icon
-            self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+            self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
             self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
             # Set the main message
             self.msg.setText("State column is not available in uploaded data \n\n अपलोड किए गए डेटा में स्टेट कॉलम उपलब्ध नहीं है")
@@ -1706,10 +1824,24 @@ class Ui_TabWidget(QWidget):
 
             # app_2 = QtWidgets.QApplication(sys.argv)
             form = ChecklistDialog('District', item, checked=True)
-            if form.exec_() == QtWidgets.QDialog.Accepted:
-                final_list = [str(s) for s in form.choices]
-            elif form.exec_() == QtWidgets.QDialog.Rejected:
-                final_list = [str(s) for s in form.choices]
+
+            try:
+                if form.exec_() == QtWidgets.QDialog.Accepted:
+                    final_list = [str(s) for s in form.choices]
+                elif form.exec_() == QtWidgets.QDialog.Rejected:
+                    final_list = [str(s) for s in form.choices]
+            except:
+                # Create the messagebox object
+                self.msg = QMessageBox()
+                # Set the information icon
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
+                self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
+                # Set the main message
+                self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
+                # Set the title of the window
+                self.msg.setWindowTitle(" ")
+                # Display the message box
+                self.msg.show()
             
             try:
                 self.filterdataDistrict(final_list)
@@ -1717,7 +1849,7 @@ class Ui_TabWidget(QWidget):
                 # Create the messagebox object
                 self.msg = QMessageBox()
                 # Set the information icon
-                self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
                 self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
                 # Set the main message
                 self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
@@ -1733,7 +1865,7 @@ class Ui_TabWidget(QWidget):
             # Create the messagebox object
             self.msg = QMessageBox()
             # Set the information icon
-            self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+            self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
             self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
             # Set the main message
             self.msg.setText("District column is not available in uploaded data \n\n अपलोड किए गए डेटा में जिला कॉलम उपलब्ध नहीं है")
@@ -1764,18 +1896,32 @@ class Ui_TabWidget(QWidget):
 
             list_set = df['Sub-District Name'].to_numpy()
 
-            sorted_list = sorted(list_set, key=str.upper)
+            # sorted_list = sorted(list_set, key=str.upper)
 
-            item = set(sorted_list)
+            item = set(list_set)
 
             item = list(item)
 
             # app_2 = QtWidgets.QApplication(sys.argv)
-            form = ChecklistDialog('Sub-District', item, checked=True)
-            if form.exec_() == QtWidgets.QDialog.Accepted:
-                final_list = [str(s) for s in form.choices]
-            elif form.exec_() == QtWidgets.QDialog.Rejected:
-                final_list = [str(s) for s in form.choices]
+            form = ChecklistDialog('Sub-District Name', item, checked=True)
+
+            try:
+                if form.exec_() == QtWidgets.QDialog.Accepted:
+                    final_list = [str(s) for s in form.choices]
+                elif form.exec_() == QtWidgets.QDialog.Rejected:
+                    final_list = [str(s) for s in form.choices]
+            except:
+                # Create the messagebox object
+                self.msg = QMessageBox()
+                # Set the information icon
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
+                self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
+                # Set the main message
+                self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
+                # Set the title of the window
+                self.msg.setWindowTitle(" ")
+                # Display the message box
+                self.msg.show()
             
             try:
                 self.filterdataSubDistrict(final_list)
@@ -1783,7 +1929,7 @@ class Ui_TabWidget(QWidget):
                 # Create the messagebox object
                 self.msg = QMessageBox()
                 # Set the information icon
-                self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
                 self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
                 # Set the main message
                 self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
@@ -1798,7 +1944,7 @@ class Ui_TabWidget(QWidget):
             # Create the messagebox object
             self.msg = QMessageBox()
             # Set the information icon
-            self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+            self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
             self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
             # Set the main message
             self.msg.setText("Sub-District column is not available in uploaded data \n\n अपलोड किए गए डेटा में उप-जिला कॉलम उपलब्ध नहीं है")
@@ -1837,10 +1983,24 @@ class Ui_TabWidget(QWidget):
 
             # app_2 = QtWidgets.QApplication(sys.argv)
             form = ChecklistDialog('Block', item, checked=True)
-            if form.exec_() == QtWidgets.QDialog.Accepted:
-                final_list = [str(s) for s in form.choices]
-            elif form.exec_() == QtWidgets.QDialog.Rejected:
-                final_list = [str(s) for s in form.choices]
+
+            try:
+                if form.exec_() == QtWidgets.QDialog.Accepted:
+                    final_list = [str(s) for s in form.choices]
+                elif form.exec_() == QtWidgets.QDialog.Rejected:
+                    final_list = [str(s) for s in form.choices]
+            except:
+                # Create the messagebox object
+                self.msg = QMessageBox()
+                # Set the information icon
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
+                self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
+                # Set the main message
+                self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
+                # Set the title of the window
+                self.msg.setWindowTitle(" ")
+                # Display the message box
+                self.msg.show()
             
             try:
                 self.filterdataBlock(final_list)
@@ -1848,7 +2008,7 @@ class Ui_TabWidget(QWidget):
                 # Create the messagebox object
                 self.msg = QMessageBox()
                 # Set the information icon
-                self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
                 self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
                 # Set the main message
                 self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
@@ -1863,7 +2023,7 @@ class Ui_TabWidget(QWidget):
             # Create the messagebox object
             self.msg = QMessageBox()
             # Set the information icon
-            self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+            self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
             self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
             # Set the main message
             self.msg.setText("Block column is not available in uploaded data \n\n अपलोड किए गए डेटा में ब्लॉक कॉलम उपलब्ध नहीं है")
@@ -1903,10 +2063,24 @@ class Ui_TabWidget(QWidget):
 
             # app_2 = QtWidgets.QApplication(sys.argv)
             form = ChecklistDialog('Health Block Name', item, checked=True)
-            if form.exec_() == QtWidgets.QDialog.Accepted:
-                final_list = [str(s) for s in form.choices]
-            elif form.exec_() == QtWidgets.QDialog.Rejected:
-                final_list = [str(s) for s in form.choices]
+
+            try:
+                if form.exec_() == QtWidgets.QDialog.Accepted:
+                    final_list = [str(s) for s in form.choices]
+                elif form.exec_() == QtWidgets.QDialog.Rejected:
+                    final_list = [str(s) for s in form.choices]
+            except:
+                # Create the messagebox object
+                self.msg = QMessageBox()
+                # Set the information icon
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
+                self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
+                # Set the main message
+                self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
+                # Set the title of the window
+                self.msg.setWindowTitle(" ")
+                # Display the message box
+                self.msg.show()
             
             try:
                 self.filterdataHealthBlock(final_list)
@@ -1914,7 +2088,7 @@ class Ui_TabWidget(QWidget):
                 # Create the messagebox object
                 self.msg = QMessageBox()
                 # Set the information icon
-                self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
                 self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
                 # Set the main message
                 self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
@@ -1929,7 +2103,7 @@ class Ui_TabWidget(QWidget):
             # Create the messagebox object
             self.msg = QMessageBox()
             # Set the information icon
-            self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+            self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
             self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
             # Set the main message
             self.msg.setText("Health Block column is not available in uploaded data \n\n अपलोड किए गए डेटा में हेल्थ ब्लॉक कॉलम उपलब्ध नहीं है")
@@ -1970,18 +2144,17 @@ class Ui_TabWidget(QWidget):
 
             # app_2 = QtWidgets.QApplication(sys.argv)
             form = ChecklistDialog('Facility Name', item, checked=True)
-            if form.exec_() == QtWidgets.QDialog.Accepted:
-                final_list = [str(s) for s in form.choices]
-            elif form.exec_() == QtWidgets.QDialog.Rejected:
-                final_list = [str(s) for s in form.choices]
-            
+
             try:
-                self.filterdataFacilityName(final_list)
-            except :
+                if form.exec_() == QtWidgets.QDialog.Accepted:
+                    final_list = [str(s) for s in form.choices]
+                elif form.exec_() == QtWidgets.QDialog.Rejected:
+                    final_list = [str(s) for s in form.choices]
+            except:
                 # Create the messagebox object
                 self.msg = QMessageBox()
                 # Set the information icon
-                self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
                 self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
                 # Set the main message
                 self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
@@ -1989,14 +2162,17 @@ class Ui_TabWidget(QWidget):
                 self.msg.setWindowTitle(" ")
                 # Display the message box
                 self.msg.show()
-            finally:
+            
+            try:
+                self.filterdataFacilityName(final_list)
+            except :
                 pass
 
         except:
             # Create the messagebox object
             self.msg = QMessageBox()
             # Set the information icon
-            self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+            self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
             self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
             # Set the main message
             self.msg.setText("Facility Name column is not available in uploaded data \n\n अपलोड किए गए डेटा में Facility Name कॉलम उपलब्ध नहीं है")
@@ -2047,7 +2223,7 @@ class Ui_TabWidget(QWidget):
                 # Create the messagebox object
                 self.msg = QMessageBox()
                 # Set the information icon
-                self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
                 self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
                 # Set the main message
                 self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
@@ -2062,7 +2238,7 @@ class Ui_TabWidget(QWidget):
             # Create the messagebox object
             self.msg = QMessageBox()
             # Set the information icon
-            self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+            self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
             self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
             # Set the main message
             self.msg.setText("Rural/ Urban column is not available in uploaded data \n\n अपलोड किए गए डेटा में ग्रामीण/शहरी कॉलम उपलब्ध नहीं है")
@@ -2115,7 +2291,7 @@ class Ui_TabWidget(QWidget):
                 # Create the messagebox object
                 self.msg = QMessageBox()
                 # Set the information icon
-                self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+                self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
                 self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
                 # Set the main message
                 self.msg.setText("Please select something. \n\n कृपया कुछ चुनें।")
@@ -2130,7 +2306,7 @@ class Ui_TabWidget(QWidget):
             # Create the messagebox object
             self.msg = QMessageBox()
             # Set the information icon
-            self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+            self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
             self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
             # Set the main message
             self.msg.setText("Ownership column is not available in uploaded data \n\n अपलोड किए गए डेटा में स्वामित्व कॉलम उपलब्ध नहीं है")
@@ -2152,146 +2328,78 @@ class Ui_TabWidget(QWidget):
 
     # To count summary of the Modified Checks
     # =======================================
-    def summaryReport(self, df):
-        global final_result_summ1, final_result_summ2, col_sum, dft_ARFacilityWise, dft_ARCheckWiseInc, FList1, dft_ARCheckWisePRE, FList2, dft_FacilityWisePRE, dataframeForSheet6, dataframeForSheet7, FList3, FList4, FList4_duplicate, dataframeForSheet4, dataframeForSheet5, FList2_copy, FList4_copy, df_Test_Plot
+    def indicator_Description(self, df):
+        global df_SummReport, val_Description, UI_Val
         FType = self.lineEdit_2.text()
 
         # For Health Sub Centre
-        if FType == 'Health Sub Centre': 
+        if FType == 'HWC-SC/SC': 
             df_SummReport = df.iloc[:, len_df_SummReport:]     ## Taking columns after 200th
-            val_Description = [
-                                'Number of mothers provided full course of 180 IFA tablets after delivery <= Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) + Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)+ Number of Institutional Deliveries conducted', 
-                                'Number of PW received 4 or more ANC check ups<=Total number of pregnant women registered for ANC', 
-                                'Number of PW tested using POC test for Syphilis<=Total number of pregnant women registered for ANC',
-                                'Number of PW given Tablet Misoprostol during home delivery<=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)',
-                                'Number of newborns received 7 Home Based Newborn Care (HBNC) visits in case of Home delivery<=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)',
-                                'Number of newborns received 6 HBNC  visits after Institutional Delivery<=Number of Institutional Deliveries conducted',
-                                'Number of mothers provided 360 Calcium tablets after delivery<=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)+Number of Institutional Deliveries conducted, Child immunisation - Vitamin K1 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
-                                'Child immunisation - Vitamin K1 (Birth Dose)<=Live Birth - Male+Live Birth - Female','Child immunisation - OPV 0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
-                                'Child immunisation - Hepatitis-B0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
-                                'Children aged between 9 and 11 months fully immunized- Male+Children aged between 9 and 11 months fully immunized - Female<=Child immunisation (9-11months) - Measles & Rubella (MR) 1st dose  & Child immunisation (9-11months) - Measles 1st dose' ]
+            val_Description = [f"Cond{i}" for i in range(53)]
+            # val_Description = [
+            #                     'Number of mothers provided full course of 180 IFA tablets after delivery <= Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) + Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)+ Number of Institutional Deliveries conducted', 
+            #                     'Number of PW received 4 or more ANC check ups<=Total number of pregnant women registered for ANC', 
+            #                     'Number of PW tested using POC test for Syphilis<=Total number of pregnant women registered for ANC',
+            #                     'Number of PW given Tablet Misoprostol during home delivery<=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)',
+            #                     'Number of newborns received 7 Home Based Newborn Care (HBNC) visits in case of Home delivery<=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)',
+            #                     'Number of newborns received 6 HBNC  visits after Institutional Delivery<=Number of Institutional Deliveries conducted',
+            #                     'Number of mothers provided 360 Calcium tablets after delivery<=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)+Number of Institutional Deliveries conducted, Child immunisation - Vitamin K1 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
+            #                     'Child immunisation - Vitamin K1 (Birth Dose)<=Live Birth - Male+Live Birth - Female','Child immunisation - OPV 0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
+            #                     'Child immunisation - Hepatitis-B0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
+            #                     'Children aged between 9 and 11 months fully immunized- Male+Children aged between 9 and 11 months fully immunized - Female<=Child immunisation (9-11months) - Measles & Rubella (MR) 1st dose  & Child immunisation (9-11months) - Measles 1st dose' ]
 
         # For Primary Health Centre
         elif FType == 'Primary Health Centre':
             df_SummReport = df.iloc[:, len_df_SummReport:]     ## Taking columns after 305th
             val_Description = [
-                                'Child immunisation - Vitamin K (Birth Dose) <= Live Birth - Male+Live Birth - Female',
-                                'Out of the total ANC registered, number registered within 1st trimester (within 12 weeks)<=Total number of pregnant women registered for ANC',
                                 'Number of PW given 180 Iron Folic Acid (IFA) tablets <=Total number of pregnant women registered for ANC', 
                                 'Number of PW given 360 Calcium tablets <=Total number of pregnant women registered for ANC', 
-                                'Number of PW received 4 or more ANC check ups<=Total number of pregnant women registered for ANC', 
-                                'Number of PW given Tablet Misoprostol during home delivery<=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)',
+                                'Number of PW received 4 or more ANC check ups<=Total number of pregnant women registered for ANC',
                                 'Number of newborns received 7 Home Based Newborn Care (HBNC) visits in case of Home delivery<=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)',
-                                'Out of total institutional deliveries number of women discharged within 48 hours of delivery<=Number of Institutional Deliveries conducted (Including C-Sections)',
-                                'Number of Eclampsia cases managed during delivery<=Number of Institutional Deliveries conducted (Including C-Sections)',
                                     'No. of PW having severe anaemia (Hb<7) treated could be greater than No. of PW having severe anaemia (Hb<7)  tested cases',
                                     'Number of PW tested for Blood Sugar using OGTT (Oral glucose tolerance test)<=Total number of pregnant women registered for ANC',
-                                    'Number of PW tested positive for GDM<=Number of PW tested for Blood Sugar using OGTT (Oral glucose tolerance test)',
                                     'Number of PW given insulin out of total tested positive for GDM<=Number of PW tested positive for GDM',
                                     'Number of Pregnant women tested for Syphilis<=Total number of pregnant women registered for ANC', 
-                                    'Number of Pregnant women tested found sero positive for Syphilis<=Number of Pregnant women tested for Syphilis',
                                     'Number of Syphilis positive pregnant women treated for Syphilis<=Number of Pregnant women tested found sero positive for Syphilis',
                                     'Number of babies treated for congenital Syphilis<=Number of babies diagnosed with congenital Syphilis',
-                                    'C-sections, performed at night (8 PM- 8 AM)<=Total C -Section deliveries performed',
-                                    'Total C -Section deliveries performed<=Number of Institutional Deliveries conducted (Including C-Sections)',
-                                        'Number of Pre term newborns ( < 37 weeks of pregnancy)<=Live Birth - Male+Live Birth - Female',
-                                        'Live Birth - Male+Live Birth - Female+Still Birth>=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)+Number of Institutional Deliveries conducted (Including C-Sections)',
                                         'Post Abortion/ MTP Complications Identified<=MTP up to 12 weeks of pregnancy+MTP more than 12 weeks of pregnancy+Abortion (spontaneous)',
-                                        'Post Abortion/ MTP Complications Treated<=Post Abortion/ MTP Complications Identified',
-                                        'Number of women provided with post abortion/ MTP contraception <=MTP up to 12 weeks of pregnancy+MTP more than 12 weeks of pregnancy+Abortion (spontaneous)',
-                                        'Number of newborns weighed at birth<=Live Birth - Male+Live Birth - Female',
-                                        'Number of newborns having weight less than 2.5 kg<=Number of newborns weighed at birth',
-                                        'Number of Newborns breast fed within 1 hour of birth <=Live Birth - Male+Live Birth - Female',
-                                        'Women receiving 1st post partum checkup within 48 hours of home delivery<=Number of Home Deliveries attended by Skill Birth Attendant (SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)',
                                         'Number of mothers provided full course of 180 IFA tablets after delivery<=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)+Number of Institutional Deliveries conducted (Including C-Sections)',
                                             'Number of mothers provided 360 Calcium tablets after delivery<=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)+Number of Institutional Deliveries conducted (Including C-Sections)',
                                             'RTI/STI for which treatment initiated - Male<=New RTI/STI cases identified - Male',
                                             'RTI/STI for which treatment initiated -Female<=New RTI/STI cases identified - Female',
                                             'Number of Post Partum sterilizations (within 7 days of delivery by minilap or concurrent with cessarean section) conducted<=Number of Institutional Deliveries conducted (Including C-Sections)',
-                                            'Number of Post Partum (within 48 hours of delivery) IUCD insertions<=Number of Home Deliveries attended by Skill Birth Attendant(SBA) (Doctor/Nurse/ANM) +Number of Home Deliveries attended by Non SBA (Trained Birth Attendant(TBA) /Relatives/etc.)+Number of Institutional Deliveries conducted (Including C-Sections)',
-                                                'Number of complications following IUCD Insertion<=Number of Interval IUCD Insertions (excluding PPIUCD and PAIUCD)+ Number of post partum (with in 48 hours of delivery) IUCD insertion +Number of post abortion (with 12 days of spontaneous or surgical abortions)  IUCD incertion',
+                                            'Number of complications following IUCD Insertion<=Number of Interval IUCD Insertions (excluding PPIUCD and PAIUCD)+ Number of post partum (with in 48 hours of delivery) IUCD insertion +Number of post abortion (with 12 days of spontaneous or surgical abortions)  IUCD incertion',
                                                 'Complications following male sterilization<=Number of Non Scalpel Vasectomy (NSV) / Conventional Vasectomy conducted',
                                                 'Complications following female sterilization<=Number of Laparoscopic sterilizations (excluding post abortion) conducted + Number of Interval Mini-lap (other than post-partum and post abortion) sterilizations conducted + Number of Post Partum sterilizations (within 7 days of delivery by minilap or concurrent with cessarean section) conducted + Number of Post Abortion sterilizations (within 7 days of spontaneous or surgical abortion) conducted',
                                                 'Child immunisation - OPV 0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
                                                 'Child immunisation - Hepatitis-B0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
                                                 'Children aged between 9 and 11 months fully immunized- Male+Children aged between 9 and 11 months fully immunized - Female<=Child immunisation (9-11months) - Measles & Rubella (MR) 1st dose  & Child immunisation (9-11months) - Measles 1st dose',
-                                                'Kala Azar Positive Cases<=Kala Azar (RDT) - Tests Conducted',
-                                                    'Out of registered, Girls received clinical services<=Girls registered in AFHC',
-                                                    'Out of registered, Boys received clinical services<=Boys registered in AFHC',
-                                                    'Out of registered, Girls received counselling<=Girls registered in AFHC',
-                                                    'Out of registered, Boys received counselling<=Boys registered in AFHC',
-                                                        'Allopathic- Outpatient attendance+Ayush - Outpatient attendance >= 14.1.1+14.1.2+14.1.3+14.1.4+14.1.5+14.1.6+14.1.7+14.1.8',
-                                                        'Number of Left Against Medical Advice (LAMA) cases<=Male Admissions +Female Admissions',
-                                                        'Out of Operation major, Gynecology- Hysterectomy surgeries<=Operation major (General and spinal anaesthesia)',
-                                                        'out of the above, Number screened positive<=Number of Pregnant Women screened for HIV',
-                                                        'number positive for HIV (Number confirmed positive at ICTCs)<=out of the above, Number screened positive',
-                                                        'Widal tests - Number Positive<=Widal tests - Number Tested',
-                                                        'Number of cases of AEFI - Abscess<=Number of Children Immunized (9.1.1+9.1.2+9.1.3+9.1.4+9.1.5+9.1.6+9.1.7+9.1.8+9.1.13+9.1.14+9.1.15+9.1.16+9.1.17+9.1.18+9.1.19+9.1.20+9.1.21+9.2.1+9.2.2+9.2.3+9.3.1+9.3.2+9.3.3+9.4.1+9.4.2+9.4.3+9.4.5+9.4.6+9.5.1+9.5.2+9.5.3+9.5.4)',
-                                                            'Number of cases of AEFI - Death<=Number of Children Immunized (9.1.1+9.1.2+9.1.3+9.1.4+9.1.5+9.1.6+9.1.7+9.1.8+9.1.13+9.1.14+9.1.15+9.1.16+9.1.17+9.1.18+9.1.19+9.1.20+9.1.21+9.2.1+9.2.2+9.2.3+9.3.1+9.3.2+9.3.3+9.4.1+9.4.2+9.4.3+9.4.5+9.4.6+9.5.1+9.5.2+9.5.3+9.5.4)',
-                                                            'Number of cases of AEFI - Others<=Number of Children Immunized (9.1.1+9.1.2+9.1.3+9.1.4+9.1.5+9.1.6+9.1.7+9.1.8+9.1.13+9.1.14+9.1.15+9.1.16+9.1.17+9.1.18+9.1.19+9.1.20+9.1.21+9.2.1+9.2.2+9.2.3+9.3.1+9.3.2+9.3.3+9.4.1+9.4.2+9.4.3+9.4.5+9.4.6+9.5.1+9.5.2+9.5.3+9.5.4)',
-                                                            'Out of the new cases of PW with hypertension detected, cases managed at institution <=New cases of PW with hypertension detected',
-                                                            'Immunisation sessions held <=Immunisation sessions planned',
-                                                            'Number of Immunisation sessions where ASHAs were present<=Immunisation sessions held', 
-                                                                'Malaria (Microscopy Tests ) - Plasmodium Falciparum test positive<=Total Blood Smears Examined for Malaria', 
-                                                                'Malaria (Microscopy Tests ) - Plasmodium Falciparum test positive<=Total Blood Smears Examined for Malaria',
-                                                                'Malaria (RDT) - Plasmodium Vivax test positive<=RDT conducted for Malaria',
-                                                                'Malaria (RDT) - Plamodium Falciparum test positive<=RDT conducted for Malaria',
-                                                                'Inpatient - Malaria <=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                                'Inpatient - Dengue<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                                    'Inpatient - Typhoid<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                                    'Inpatient - Asthma, Chronic Obstructive Pulmonary Disease (COPD), Respiratory infections<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                                    'Inpatient - Tuberculosis<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                                    'Inpatient - Pyrexia of unknown origin (PUO)<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                                    'Inpatient - Diarrhea with dehydration<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                                        'Inpatient - Hepatitis<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                                        'Inpatient Deaths - Male<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                                        'Inpatient Deaths - Female<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                                        'Number of children discharged with target weight gain from the NRCs<=Number of children admitted in NRC',
-                                                                        'Out of the total number of Hb tests done, Number having Hb < 7 mg<=Number of Hb tests conducted',
-                                                                            'Male HIV - Number Positive<=Male HIV - Number Tested',
-                                                                            'Female Non ANC HIV - Number Positive<=Female Non ANC HIV - Number Tested',
-                                                                            'Number of Male STI/RTI attendees found sero Positive for syphilis<=Number of Male STI/RTI attendees tested for syphilis',
-                                                                            'Number of Female (Non ANC) STI/RTI attendees found sero Positive for syphilis<=Number of Female (Non ANC)STI/RTI attendees tested for syphilis',
-                                                                            'Child immunisation - BCG<=Live Birth - Male+Live Birth - Female']
+                                                'Immunisation sessions held <=Immunisation sessions planned',
+                                                'Number of children discharged with target weight gain from the NRCs<=Number of children admitted in NRC',
+                                                'Number of Female (Non ANC) STI/RTI attendees found sero Positive for syphilis<=Number of Female (Non ANC)STI/RTI attendees tested for syphilis',
+                                                'Child immunisation - BCG<=Live Birth - Male+Live Birth - Female']
+
 
 
         # For Sub District Hospital
         elif FType == 'Community Health Centre':
             df_SummReport = df.iloc[:, len_df_SummReport:]     ## Taking columns after 305th
             val_Description = [
-                                'Out of the ANC registered, number registered with in 1st trimester(Within 12 weeks)<=Total number of pregnant women registered for ANC',
-                                'Male HIV Number Positive <= Male HIV - Number Tested',
                                 'Number of PW given 180 Iron Folic Acid (IFA) tablets <=Total number of pregnant women registered for ANC ',
                                 'Number of PW given 360 Calcium tablets <=Total number of pregnant women registered for ANC ',
                                 'Number of PW received 4 or more ANC check ups<=Total number of pregnant women registered for ANC ',
-                                'Out of the new cases of PW with hypertension detected, cases managed at institution<=New cases of PW with hypertension detected ',
-                                'Number of Eclampsia cases managed during delivery<=Number of Institutional Deliveries conducted (Including C-Sections)',
                                 'No. of PW having severe anaemia (Hb<7) treated could be greater than No. of PW having severe anaemia (Hb<7)  tested cases',
-                                'Number of PW tested positive for GDM<=Number of PW tested for Blood Sugar using OGTT (Oral glucose tolerance test)',
                                 'Number of PW tested for Blood Sugar using OGTT (Oral glucose tolerance test)<=Total number of pregnant women registered for ANC ',
                                     'Number of PW given insulin out of total tested positive for GDM<=Number of PW tested positive for GDM',
-                                    'Number of Pregnant women tested found sero positive for Syphilis<=Number of Pregnant women tested for Syphilis',
                                     'Number of Pregnant women tested for Syphilis<=Total number of pregnant women registered for ANC ',
                                     'Number of Syphilis positive pregnant women treated for Syphilis<=Number of Pregnant women tested found sero positive for Syphilis',
                                     'Number of babies treated for congenital Syphilis<=Number of babies diagnosed with congenital Syphilis',
-                                    'Out of total institutional deliveries number of women discharged within 48 hours of delivery<=Number of Institutional Deliveries conducted (Including C-Sections)',
-                                    'Total C -Section deliveries performed<=Number of Institutional Deliveries conducted (Including C-Sections)',
-                                    'C-sections, performed at night (8 PM- 8 AM)<=Total C -Section deliveries performed',
-                                    'Live Birth - Male + Live Birth - Female + Still Birth>=Number of Institutional Deliveries conducted (Including C-Sections)',
-                                    'Number of Pre term newborns ( < 37 weeks of pregnancy)<=Live Birth - Male+Live Birth - Female',
                                     'Post Abortion/ MTP Complications Identified<=MTP up to 12 weeks of pregnancy+MTP more than 12 weeks of pregnancy+Abortion (spontaneous)',
-                                    'Post Abortion/ MTP Complications Treated<=Post Abortion/ MTP Complications Identified',
-                                        'Number of women provided with post abortion/ MTP contraception<=MTP up to 12 weeks of pregnancy+MTP more than 12 weeks of pregnancy+Abortion (spontaneous)',
-                                        'Number of newborns weighed at birth<=Live Birth - Male+Live Birth - Female',
-                                        'Number of newborns having weight less than 2.5 kg<=Number of newborns weighed at birth',
-                                        'Number of Newborns breast fed within 1 hour of birth<=Live Birth - Male+Live Birth - Female',
-                                        'Number of Complicated pregnancies treated with Blood Transfusion<=Number of cases of pregnant women with Obstetric Complications attended (Antepartum haemorrhage (APH), Post-Partum Hemorrhage (PPH), Sepsis, Eclampsia and others) ',
                                         'Number of mothers provided full course of 180 IFA tablets after delivery<=Number of Institutional Deliveries conducted (Including C-Sections)',
                                         'Number of mothers provided 360 Calcium tablets after delivery<=Number of Institutional Deliveries conducted (Including C-Sections)',
                                         'RTI/STI for which treatment initiated - Male<=New RTI/STI cases identified - Male',
                                         'RTI/STI for which treatment initiated -Female<=New RTI/STI cases identified - Female',
                                         'Number of Post Partum sterilizations (within 7 days of delivery by minilap or concurrent with cessarean section) conducted<=Number of Institutional Deliveries conducted (Including C-Sections)',
-                                        'Number of Post Partum (within 48 hours of delivery) IUCD insertions<=Number of Institutional Deliveries conducted (Including C-Sections)',
                                             'Number of complications following IUCD Insertion<=Number of Interval IUCD Insertions (excluding PPIUCD and PAIUCD)+ Number of post partum (with in 48 hours of delivery) IUCD insertion +Number of post abortion (with 12 days of spontaneous or surgical abortions)  IUCD incertion',
                                             'Complications following male sterilization<=Number of Non Scalpel Vasectomy (NSV) / Conventional Vasectomy conducted',
                                             'Complications following female sterilization<=Number of Laparoscopic sterilizations (excluding post abortion) conducted + Number of Interval Mini-lap (other than post-partum and post abortion) sterilizations conducted + Number of Post Partum sterilizations (within 7 days of delivery by minilap or concurrent with cessarean section) conducted + Number of Post Abortion sterilizations (within 7 days of spontaneous or surgical abortion) conducted',
@@ -2300,49 +2408,8 @@ class Ui_TabWidget(QWidget):
                                             'Child immunisation - OPV-0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
                                             'Child immunisation - Hepatitis-B0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
                                             'Children aged between 9 and 11 months fully immunized- Male+Children aged between 9 and 11 months fully immunize<=Child immunisation (9-11months) - Measles & Rubella (MR) 1st dose  & Child immunisation (9-11months) - Measles 1st dose',
-                                            'Kala Azar Positive Cases<=Kala Azar (RDT) - Tests Conducted',
-                                            'Out of registered, Girls received clinical services<=Girls registered in AFHC',
-                                            'Out of registered, Boys received clinical services<=Boys registered in AFHC',
-                                            'Out of registered, Girls received counselling<=Girls registered in AFHC',
-                                            'Out of registered, Boys received counselling<=Boys registered in AFHC',
-                                                'Allopathic- Outpatient attendance+Ayush - Outpatient attendance >= Number of outpatients (Diabetes + Hypertension +  Stroke (Paralysis) + Acute Heart Diseases + Mental illness + Epilepsy + Ophthalmic Related + Dental + Oncology',
-                                                'Number of Left Against Medical Advice (LAMA) cases<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                'Inpatient - Malaria<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                'Inpatient - Dengue<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                'Inpatient - Typhoid<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                'Inpatient - Asthma, Chronic Obstructive Pulmonary Disease (COPD), Respiratory infections<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                'Inpatient - Tuberculosis<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                'Inpatient - Pyrexia of unknown origin (PUO)<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                'Inpatient - Diarrhea with dehydration<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                'Inpatient - Hepatitis<=Inpatient (Male)- Children<18yrs+Inpatient (Male)- Adults+Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                'Emergency - Trauma ( accident, injury, poisoning etc)<= Patients registered at Emergency Department',
-                                                'Emergency - Burn<= Patients registered at Emergency Department',
-                                                'Emergency - Obstetrics complications<= Patients registered at Emergency Department',
-                                                    'Emergency - Snake Bite<=Patients registered at Emergency Department',
-                                                    'Emergency - Acute Caridiac Emergencies<= Patients registered at Emergency Department',
-                                                    'Number of deaths occurring at Emergency Department<= Patients registered at Emergency Department',
-                                                    'Number of children discharged with target weight gain from the NRCs<=Number of children admitted in NRC',
-                                                    'Out of the total number of Hb tests done, Number having Hb < 7 mg<=Number of Hb tests conducted',
-                                                    'Female Non ANC HIV - Number Positive<=Female Non ANC HIV - Number Tested',
-                                                    'out of the above, Number screened positive<=Number of Pregnant Women screened for HIV',
-                                                    'out of the above, Number screened positive, number confirmed with HIV infection at Integrated Counselling and Testing Centre (ICTC) <=out of the above, Number screened positive',
-                                                    'Widal tests - Number Positive<=Widal tests - Number Tested',
-                                                    'Number of cases of AEFI - Abscess<=Number of Children Immunized (Vitamin K (Birth Dose) + BCG + DPT1 + DPT2 + DPT3 + Pentavalent 1 + Pentavalent 2 + Pentavalent 3 + Hepatitis-B0 (Birth Dose) + Hepatitis-B1 +  Hepatitis-B2 + Hepatitis-B3 + Inactivated Injectable Polio Vaccine 1 (IPV 1) + Inactivated Injectable Polio Vaccine 2 (IPV 2) + Rotavirus 1 + Rotavirus 2 + Rotavirus 3 + (9-11 months) - Measles & Rubella (MR)/ Measles containing vaccine(MCV) - 1st Dose + (9-11 months) - Measles 1st Dose + (9-11 months) - JE 1st dose + (after 12 months) - Measles & Rubella (MR)/ Measles containing vaccine(MCV) - 1st Dose + (after 12 months) - Measles 1st Dose + (after 12 months) - JE 1st dose + Measles & Rubella (MR)- 2nd Dose (16-24 months) + Measles 2nd dose (More than 16 months) + DPT 1st Booster + Measles, Mumps, Rubella (MMR) Vaccine + Number of children more than 16 months of age who received Japanese Encephalitis (JE) vaccine + Typhoid + Children more than 5 years received DPT5 (2nd Booster) + Children more than 10 years received TT10/ Td10 + Children more than 16 years received TT16/ Td16)',
-                                                    'Number of cases of AEFI - Death<=Number of Children Immunized (Vitamin K (Birth Dose) + BCG + DPT1 + DPT2 + DPT3 + Pentavalent 1 + Pentavalent 2 + Pentavalent 3 + Hepatitis-B0 (Birth Dose) + Hepatitis-B1 +  Hepatitis-B2 + Hepatitis-B3 + Inactivated Injectable Polio Vaccine 1 (IPV 1) + Inactivated Injectable Polio Vaccine 2 (IPV 2) + Rotavirus 1 + Rotavirus 2 + Rotavirus 3 + (9-11 months) - Measles & Rubella (MR)/ Measles containing vaccine(MCV) - 1st Dose + (9-11 months) - Measles 1st Dose + (9-11 months) - JE 1st dose + (after 12 months) - Measles & Rubella (MR)/ Measles containing vaccine(MCV) - 1st Dose + (after 12 months) - Measles 1st Dose + (after 12 months) - JE 1st dose + Measles & Rubella (MR)- 2nd Dose (16-24 months) + Measles 2nd dose (More than 16 months) + DPT 1st Booster + Measles, Mumps, Rubella (MMR) Vaccine + Number of children more than 16 months of age who received Japanese Encephalitis (JE) vaccine + Typhoid + Children more than 5 years received DPT5 (2nd Booster) + Children more than 10 years received TT10/ Td10 + Children more than 16 years received TT16/ Td16)',
-                                                    'Number of cases of AEFI - Others<=Number of Children Immunized (Vitamin K (Birth Dose) + BCG + DPT1 + DPT2 + DPT3 + Pentavalent 1 + Pentavalent 2 + Pentavalent 3 + Hepatitis-B0 (Birth Dose) + Hepatitis-B1 +  Hepatitis-B2 + Hepatitis-B3 + Inactivated Injectable Polio Vaccine 1 (IPV 1) + Inactivated Injectable Polio Vaccine 2 (IPV 2) + Rotavirus 1 + Rotavirus 2 + Rotavirus 3 + (9-11 months) - Measles & Rubella (MR)/ Measles containing vaccine(MCV) - 1st Dose + (9-11 months) - Measles 1st Dose + (9-11 months) - JE 1st dose + (after 12 months) - Measles & Rubella (MR)/ Measles containing vaccine(MCV) - 1st Dose + (after 12 months) - Measles 1st Dose + (after 12 months) - JE 1st dose + Measles & Rubella (MR)- 2nd Dose (16-24 months) + Measles 2nd dose (More than 16 months) + DPT 1st Booster + Measles, Mumps, Rubella (MMR) Vaccine + Number of children more than 16 months of age who received Japanese Encephalitis (JE) vaccine + Typhoid + Children more than 5 years received DPT5 (2nd Booster) + Children more than 10 years received TT10/ Td10 + Children more than 16 years received TT16/ Td16)',
-                                                    'Immunisation sessions held <=Immunisation sessions planned ',
-                                                        'Number of Immunisation sessions where ASHAs were present<=Immunisation sessions held ',
-                                                        'Malaria (Microscopy Tests ) - Plasmodium Vivax test positive<=Total Blood Smears Examined for Malaria ',
-                                                        'Malaria (Microscopy Tests ) - Plasmodium Falciparum test positive<=Total Blood Smears Examined for Malaria ',
-                                                        'Malaria (RDT) - Plasmodium Vivax test positive<=RDT conducted for Malaria',
-                                                        'Malaria (RDT) - Plamodium Falciparum test positive<=RDT conducted for Malaria',
-                                                        'Inpatient Deaths - Male <=Inpatient (Male)- Children<18yrs+Inpatient (Male)',
-                                                        'Inpatient Deaths - Female<=Inpatient (Female)- Children<18yrs+Inpatient (Female)- Adults',
-                                                        'Number of deaths occurring at SNCU<=Special Newborn Care Unit (SNCU Admissions) - Inborn Male + Special Newborn Care Unit (SNCU Admissions) - Inborn Female + Outborn – Male + Outborn - Female + Number of newborns admitted in SNCU - referred by ASHA',
-                                                        'Out of Operation major, Gynecology- Hysterectomy surgeries<=Operation major (General and spinal anaesthesia)',
-                                                        'Number of Male STI/RTI attendees found sero Positive for syphilis<=Number of Male STI/RTI attendees tested for syphilis',
-                                                        'Number of Female (Non ANC) STI/RTI attendees found sero Positive for syphilis<=Number of Female (Non ANC)STI/RTI attendees tested for syphilis'
-                                                        ]
+                                             'Number of children discharged with target weight gain from the NRCs<=Number of children admitted in NRC']
+                                                        
 
         # For Primary Health Centre
         elif FType == 'Sub District Hospital':
@@ -2354,20 +2421,22 @@ class Ui_TabWidget(QWidget):
                                     'No. of PW having severe anaemia (Hb<7) treated could be greater than No. of PW having severe anaemia (Hb<7)  tested cases',
                                     'Number of PW tested for Blood Sugar using OGTT (Oral glucose tolerance test)<=Total number of pregnant women registered for ANC ',
                                     'Number of PW given insulin out of total tested positive for GDM<=Number of PW tested positive for GDM',
-                                    'Number of Pregnant women tested for Syphilis<=Total number of pregnant women registered for ANC ',
-                                    'Number of Syphilis positive pregnant women treated for Syphilis<=Number of Pregnant women tested found sero positive for Syphilis',
-                                    'Number of babies treated for congenital Syphilis<=Number of babies diagnosed with congenital Syphilis',
-                                    'Post Abortion/ MTP Complications Identified<=MTP up to 12 weeks of pregnancy+MTP more than 12 weeks of pregnancy+Abortion (spontaneous)',
+                                        'Number of Pregnant women tested for Syphilis<=Total number of pregnant women registered for ANC ',
+                                        'Number of Syphilis positive pregnant women treated for Syphilis<=Number of Pregnant women tested found sero positive for Syphilis',
+                                        'Number of babies treated for congenital Syphilis<=Number of babies diagnosed with congenital Syphilis',
+                                        'Post Abortion/ MTP Complications Identified<=MTP up to 12 weeks of pregnancy+MTP more than 12 weeks of pregnancy+Abortion (spontaneous)',
                                             'Number of mothers provided full course of 180 IFA tablets after delivery<=Number of Institutional Deliveries conducted (Including C-Sections)',
                                             'Number of mothers provided 360 Calcium tablets after delivery<=Number of Institutional Deliveries conducted (Including C-Sections)',
                                             'RTI/STI for which treatment initiated - Male<=New RTI/STI cases identified - Male',
                                             'RTI/STI for which treatment initiated -Female<=New RTI/STI cases identified - Female',
                                             'Number of Post Partum sterilizations (within 7 days of delivery by minilap or concurrent with cessarean section) conducted<=Number of Institutional Deliveries conducted (Including C-Sections)',
                                             'Number of complications following IUCD Insertion<=Number of Interval IUCD Insertions (excluding PPIUCD and PAIUCD)+ Number of post partum (with in 48 hours of delivery) IUCD insertion +Number of post abortion (with 12 days of spontaneous or surgical abortions)  IUCD incertion',
+                                                'Complications following male sterilization <= Number of Non Scalpel Vasectomy (NSV) / Conventional Vasectomy conducted',
+                                                'Complications following female sterilization <= Number of Non Scalpel Vasectomy (NSV) / Conventional Vasectomy conducted + Number of Interval Mini-lap (other than post-partum and post abortion) sterilizations conducted + Number of Postpartum sterilizations (within 7 days of delivery by minilap or concurrent with caesarean section) conducted + Number of Postpartum (within 48 hours of delivery) IUCD insertions',
                                                 'Child immunisation - BCG<=Live Birth - Male+Live Birth - Female',
-                                                'Child immunisation - OPV-0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
-                                                'Child immunisation - Hepatitis-B0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
-                                                'Number of children discharged with target weight gain from the NRCs<=Number of children admitted in NRC']
+                                                    'Child immunisation - OPV-0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
+                                                    'Child immunisation - Hepatitis-B0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
+                                                    'Number of children discharged with target weight gain from the NRCs<=Number of children admitted in NRC']
             
         # For District Hospital
         elif FType == 'District Hospital':
@@ -2403,36 +2472,44 @@ class Ui_TabWidget(QWidget):
                                             'Child immunisation - Hepatitis-B0 (Birth Dose)<=Live Birth - Male+Live Birth - Female',
                                             'Number of children discharged with target weight gain from the NRCs<=Number of children admitted in NRC']
 
-        
+
+    ###! TO GENERATE REPORT BY BLANKS
+    ###! ----------------------------
+    ###! ----------------------------
+
+    def summaryReportByBlanks(self, df):
+        global final_result_summ1, final_result_summ2, final_result_summ2_For_SubPlots,col_sum, dft_ARFacilityWise, dft_ARCheckWiseInc, \
+                FList1, dft_ARCheckWiseINCBlnk, FList2, dft_FacilityWiseINCBlnk, dataframeForSheet6, dataframeForSheet7, FList3_copy, FList3, \
+                    FList4, FList4_duplicate, dataframeForSheet4, dataframeForSheet5, FList2_copy, FList4_copy, df_Test_Plot_Inc_State, \
+                        df_Test_Plot_INCBlnk_State, count_df_Test_Plot_Inc_State, count_df_Test_Plot_INCBlnk_State
+
+        self.indicator_Description(df)
 
         '''
         ## First Summary Report
         ## ---------------------
         '''
-
-        # count_Consistent = []
         count_Inconsistent = []
-        # count_Blank = []
-        count_ProbableRErr = []
-
-
+        count_IncDueToBlank = []
 
         Columns = list(df_SummReport.columns.values.tolist())
 
         for col_name in Columns:
 
-            c2 = df_SummReport[col_name].str.count("Inconsistent").sum()
+            c2 = df_SummReport[col_name].str.match("^Inconsistent [0-9a-zA-Z]*\.[0-9a-zA-Z]*").sum()
             count_Inconsistent.append(c2)
 
-            c4 = df_SummReport[col_name].str.count("Probable Reporting Error").sum()
-            count_ProbableRErr.append(c4)
+            c4 = df_SummReport[col_name].str.match("^Inconsistent due to blank [0-9a-zA-Z]*\.[0-9a-zA-Z]*").sum()
+            count_IncDueToBlank.append(c4)
 
-        print(len(val_Description), len(count_Inconsistent), len(count_ProbableRErr))   
+        ###! PRINTING length of ...
+        ###? ************************************************************************************************************
+        print(len(val_Description), len(count_Inconsistent), len(count_IncDueToBlank))   
 
         # To show facilities in a column
         colInterest = df['Facility Name'].to_numpy() # Give column names in addition
 
-        ''' For Inconsistent '''
+        #!''' For Inconsistent '''
         inconsistent_list = []
 
         lg = len(df_SummReport.columns)
@@ -2444,7 +2521,7 @@ class Ui_TabWidget(QWidget):
             for j in range(0, len(colComparison)):
                 primString = colComparison[j]
                 
-                pattern = re.compile("^I")
+                pattern = re.compile("^Inconsistent [0-9a-zA-Z]*\.[0-9a-zA-Z]*")
                 if pattern.match(str(primString)):
                     temp.append(colInterest[j])
                 else:
@@ -2452,8 +2529,8 @@ class Ui_TabWidget(QWidget):
 
             inconsistent_list.append(temp)           
 
-        ''' For PRE '''
-        PRE_list = []
+        #!''' For INCBlnk '''
+        INCBlnk_list = []
         # TO show facility in the sheet5
         lg = len(df_SummReport.columns)
 
@@ -2464,54 +2541,54 @@ class Ui_TabWidget(QWidget):
             for j in range(0, len(colComparison)):
                 primString = colComparison[j]
 
-                pattern = re.compile("^P")
+                pattern = re.compile("^Inconsistent due to blank [0-9a-zA-Z]*\.[0-9a-zA-Z]*")
                 if pattern.match(str(primString)):
                     temp.append(colInterest[j])
                 else:
                     continue
 
-            PRE_list.append(temp)      
+            INCBlnk_list.append(temp)
 
-
-        final_result_summ1 = pd.DataFrame({"Conditions": df_SummReport.columns, 
-                                             "Description": val_Description,
-                                                "Facilities(Name) Showing Inconsistent": inconsistent_list,
-                                                    "Inconsistent": count_Inconsistent,
-                                                        "Facilities (Name) Showing Probable Reporting Error": PRE_list,
-                                                            "Probable Reporting Error": count_ProbableRErr,
+        final_result_summ1 = pd.DataFrame({ "Conditions": df_SummReport.columns, 
+                                                "Description": val_Description,
+                                                    "Facilities(Name) Showing Inconsistent": inconsistent_list,
+                                                        "Inconsistent": count_Inconsistent,
+                                                            "Facilities (Name) Showing Inconsistent due to blank": INCBlnk_list,
+                                                                "Inconsistent due to blank": count_IncDueToBlank,
                                                             })
+
 
         final_result_summ1 = final_result_summ1.sort_values(by=['Inconsistent'], ascending=False)
         final_result_summ1 = final_result_summ1.reset_index(drop=True)
 
         dataframeForSheet4 = final_result_summ1[['Conditions', 'Description', 'Inconsistent', 'Facilities(Name) Showing Inconsistent']]
-        dataframeForSheet5 = final_result_summ1[['Conditions', 'Description', 'Probable Reporting Error', 'Facilities (Name) Showing Probable Reporting Error']]
+        dataframeForSheet5 = final_result_summ1[['Conditions', 'Description', 'Inconsistent due to blank', 'Facilities (Name) Showing Inconsistent due to blank']]
 
-        dataframeForSheet5 = dataframeForSheet5[dataframeForSheet5['Probable Reporting Error']  !=  0]
+        dataframeForSheet5 = dataframeForSheet5[dataframeForSheet5['Inconsistent due to blank']  !=  0]
 
         FList1 = final_result_summ1["Facilities(Name) Showing Inconsistent"].tolist()
-        FList2 = final_result_summ1["Facilities (Name) Showing Probable Reporting Error"].tolist()
+        FList2 = final_result_summ1["Facilities (Name) Showing Inconsistent due to blank"].tolist()
 
         # Total number of rows in the upoaded dataset
         count_rows = df_SummReport.shape[0]
         
-        FList2_copy = dataframeForSheet5["Facilities (Name) Showing Probable Reporting Error"].tolist()    
+        FList2_copy = dataframeForSheet5["Facilities (Name) Showing Inconsistent due to blank"].tolist()    
 
         # Percentage for Validation Summary Sheet to show color codes
         final_result_summ1['PerIncSheet1'] = final_result_summ1['Inconsistent']/count_rows*100
         final_result_summ1['Inconsistent'].value_counts()
-        final_result_summ1['PerPRErrSheet1'] = final_result_summ1['Probable Reporting Error']/count_rows*100
+        final_result_summ1['PerINCBlnkrrSheet1'] = final_result_summ1['Inconsistent due to blank']/count_rows*100
 
         len0 = len(final_result_summ1['PerIncSheet1'])
-        len1 = len(final_result_summ1['PerPRErrSheet1'])
- 
+        len1 = len(final_result_summ1['PerINCBlnkrrSheet1'])
+
         # Deleting unnecessary columns
         # del final_result_summ1['PerIncSheet1']
-        # del final_result_summ1['PerPRErrSheet1']
+        # del final_result_summ1['PerINCBlnkrrSheet1']
             
         def select_col_SumSheet(X):
             # COLORS
-            c = ['background-color:  #EF5350',                  #   >=25% RED
+            c = [   'background-color:  #EF5350',                  #   >=25% RED
                         'background-color: #FFAF00',            #   10 - 25% LIGHTER RED
                             'background-color: #C0C000',        #   5 - 10% MORE LIGHTER RED
                                 'background-color: #00AF5F',    #   < 5% LIGHTEST RED
@@ -2519,20 +2596,20 @@ class Ui_TabWidget(QWidget):
 
             mask_30 = (X['Inconsistent'] == 0)
             cnt30 = mask_30.values.sum()
-            mask_29 = (X['Probable Reporting Error'] == 0)
+            mask_29 = (X['Inconsistent due to blank'] == 0)
             cnt29 = mask_29.values.sum()
 
             #DataFrame with same index and columns names as original filled empty strings
             df1 =  pd.DataFrame(c[4], X.index, columns=X.columns)
-            df1.loc[mask_29, 'Probable Reporting Error'] = c[3]
+            df1.loc[mask_29, 'Inconsistent due to blank'] = c[3]
             df1.loc[mask_30, 'Inconsistent'] = c[3]
 
             return df1
 
         # Remoiving inconsistent facility names from validation summary sheet
         final_result_summ1.drop(['Facilities(Name) Showing Inconsistent'], axis = 1, inplace=True)
-        # Remoiving PRE facility names from validation summary sheet
-        final_result_summ1.drop(['Facilities (Name) Showing Probable Reporting Error'], axis = 1, inplace=True)
+        # Remoiving INCBlnk facility names from validation summary sheet
+        final_result_summ1.drop(['Facilities (Name) Showing Inconsistent due to blank'], axis = 1, inplace=True)
 
         final_result_summ1 = final_result_summ1.style.apply(select_col_SumSheet, axis=None)
 
@@ -2545,23 +2622,33 @@ class Ui_TabWidget(QWidget):
         summ2_countProbableRErr = []
         All_Blank = []
 
-        # Iterating over indices of each row and calculating number of Blanks for each Facility Name 
+        #? Iterating over indices of each row and calculating number of Blanks for each Facility Name 
         for index in range(len(df_SummReport)):
             '''   For no. of Inconsistent   '''
-            inconsistent = df_SummReport.iloc[index, :].str.count("Inconsistent").sum()
-            summ2_countInconsistent.append(inconsistent)
+            if df_SummReport.iloc[index, :].str.match("^Inconsistent [0-9]*.[0-9]*").sum() > 0:
+                inconsistent = df_SummReport.iloc[index, :].str.match("^Inconsistent [0-9]*.[0-9]*").sum()
+                print('** Entered Yess-------- **')
+                summ2_countInconsistent.append(inconsistent)
+            else:
+                print('** Entered else **')
+                summ2_countInconsistent.append(0)
+                
             
-            '''   For no. of Probable Reporting Errors   '''
-            probableRErr = df_SummReport.iloc[index, :].str.count('Probable Reporting Error').sum()
-            summ2_countProbableRErr.append(probableRErr)
+            '''   For no. of Inconsistent due to blank   '''
+            if df_SummReport.iloc[index, :].str.match('^Probable Reporting Error by Blank [0-9]*.[0-9]*').sum() > 0:
+                probableRErr = df_SummReport.iloc[index, :].str.match('^Probable Reporting Error by Blank [0-9]*.[0-9]*').sum()
+                print('** Entered Yess-------- **')
+                summ2_countProbableRErr.append(probableRErr)
+            else:
+                print('** Entered else **')
+                summ2_countProbableRErr.append(0)
 
-            blank = df_SummReport.iloc[index, :].str.count("Blank").sum()
+            blank = df_SummReport.iloc[index, :].str.match("Blank").sum()
             if blank == len(df_SummReport.columns):
                 All_Blank.append('Yes')
             else:
                 All_Blank.append('No')
 
-        
 
         #########################################################   
         #  Facility Specific Inconsistent (Sheet 6)     
@@ -2580,16 +2667,16 @@ class Ui_TabWidget(QWidget):
             for j in range(0, lg):
                 primString = colComparison[j]
 
-                pattern = re.compile("^I")
+                pattern = re.compile("^Inconsistent by Blank")
                 if pattern.match(str(primString)):
-                    txt = primString.replace('Inconsistent', " ")
+                    txt = primString.replace('nan', "NA")
                     temp.append(txt)
 
             inc_list.append(temp)
 
-        ''' For PRE '''
+        ''' For INCBlnk '''
         # *************
-        pre_list = []
+        incblnk_list = []
 
         lg = len(df_SummReport.columns)
         len_df = df_SummReport.shape[0]
@@ -2601,93 +2688,107 @@ class Ui_TabWidget(QWidget):
             for j in range(0, lg):
                 primString = colComparison[j]
 
-                pattern = re.compile("^P")
+                pattern = re.compile("^Probable Reporting Error by Blank")
                 if pattern.match(str(primString)):
-                    txt = primString.replace('Probable Reporting Error', " ")
+                    txt = primString.replace('nan', "NA")
                     temp.append(txt)
 
-            pre_list.append(temp)
+            incblnk_list.append(temp)
 
 
+        #?#############################################################################################
+        #?#############################################################################################
+        final_result_summ2 = pd.DataFrame({
+                                            "DATE": df['DATE'].values.tolist(),
+                                                "State": df['State'].values.tolist(),
+                                                    "District": df['District Name'].values.tolist(),
+                                                        "Sub-district": df['Sub-District Name'].values.tolist(),
+                                                            # "Block": df['Block Name'].tolist(),
+                                                                "Facility Name": colInterest,
+                                                                    "Inconsistent": summ2_countInconsistent,
+                                                                        "Probable Reporting Error": summ2_countProbableRErr,
+                                                                            "All Blank": All_Blank,
+                                                                                "Checks (Inconsistent)" : inc_list,
+                                                                                    "Checks (INCBlnk)": incblnk_list
+                                                                                     })
 
-        ###################################################
-        
-        
-        final_result_summ2 = pd.DataFrame({ "State": df['State'].tolist(),
-                                                "District": df['District Name'].tolist(),
-                                                    "Sub-district": df['Sub-District Name'].tolist(),
-                                                        # "Block": df['Block Name'].tolist(),
-                                                            "Facility Name": colInterest,
-                                                                "Inconsistent": summ2_countInconsistent,
-                                                                    "Probable Reporting Error": summ2_countProbableRErr,
-                                                                        "All Blank": All_Blank,
-                                                                            "Checks (Inconsistent)" : inc_list,
-                                                                                "Checks (PRE)": pre_list
-                                                                                    })
 
         # Sorting in alphabetical  order
-        # final_result_summ2 = final_result_summ2.sort_values(by=['Facility Name'], ascending=True)
         final_result_summ2 = final_result_summ2.sort_values(by=['Inconsistent'], ascending=False)
         final_result_summ2 = final_result_summ2.reset_index(drop=True)
 
+    
         Counter(final_result_summ2['District'])
         Counter(final_result_summ2['Inconsistent'])
+        Counter(final_result_summ2['Probable Reporting Error'])
 
-        df_Test_Plot = final_result_summ2.groupby('District').sum('Inconsistent')
-        df_Test_Plot = df_Test_Plot.sort_values(by=['Inconsistent'], ascending=False)
+
+        df_Test_Plot_Inc_State = final_result_summ2.groupby('State').apply(lambda x: x[x['Inconsistent'] > 0].count())['Inconsistent'].nlargest(5)
+        ###? Dictionary having count of Inconsistents state wise
+        count_df_Test_Plot_Inc_State = df_Test_Plot_Inc_State.to_dict()
+
+        df_Test_Plot_INCBlnk_State = final_result_summ2.groupby('State').apply(lambda x: x[x['Probable Reporting Error'] > 0].count())['Probable Reporting Error'].nlargest(5)
+        ###? Dictionary having count of INCBlnk state wise
+        count_df_Test_Plot_INCBlnk_State = df_Test_Plot_INCBlnk_State.to_dict()
+
+        ##!## Extract names of top five states
+        FINAL_RESULT_2 = final_result_summ2.copy()
+        LIST_Test_Plot_Inc_State = list(count_df_Test_Plot_Inc_State)
+        final_result_summ2_For_SubPlots = FINAL_RESULT_2[FINAL_RESULT_2['State'].isin(LIST_Test_Plot_Inc_State)]
+
 
         FList3 = final_result_summ2["Checks (Inconsistent)"].tolist()
-        FList4 = final_result_summ2["Checks (PRE)"].tolist()
+        FList4 = final_result_summ2["Checks (INCBlnk)"].tolist()
 
         FList4_duplicate = list(filter(None, FList4))
 
         ##################### Facility-wise Inconsistencies ########################
-        dataframeForSheet6 = final_result_summ2[['Facility Name', 'Sub-district', 'District', 'State', 'Inconsistent', 'Checks (Inconsistent)']]
-        dataframeForSheet6_updated = dataframeForSheet6[['Facility Name', 'Sub-district', 'District', 'State', 'Inconsistent', 'Checks (Inconsistent)']].fillna('Not Available in Dataset')
-        # dataframeForSheet6['Facility Name'] = dataframeForSheet6[['Facility Name', 'Block', 'Sub-district', 'District', 'State']].apply(lambda x: ' / '.join(x), axis=1)
-        dataframeForSheet6['Facility Name'] = dataframeForSheet6_updated['Facility Name'] + " / " + " / " + dataframeForSheet6_updated['Sub-district'] + " / " + dataframeForSheet6_updated['District'] + " / " + dataframeForSheet6_updated['State']
-        dataframeForSheet6.rename(columns = {'Facility Name':'Facility Name/ Sub-District/ District/ State'}, inplace=True)
-
-        ##################### Facility-wise PRE ########################
-        dataframeForSheet7 = final_result_summ2[['Facility Name', 'Sub-district', 'District', 'State', 'Probable Reporting Error', 'Checks (PRE)']]
+        dataframeForSheet6 = final_result_summ2[['DATE', 'Facility Name', 'Sub-district', 'District', 'State', 'Inconsistent', 'Checks (Inconsistent)']]
+        dataframeForSheet6 = dataframeForSheet6[['DATE','Facility Name', 'Sub-district', 'District', 'State', 'Inconsistent', 'Checks (Inconsistent)']].fillna('Not Available in Dataset')
+        
+        ##################### Facility-wise Inconsistencies due to blank ########################
+        dataframeForSheet7 = final_result_summ2[['DATE', 'Facility Name', 'Sub-district', 'District', 'State', 'Probable Reporting Error', 'Checks (INCBlnk)']]
         dataframeForSheet7 = dataframeForSheet7[dataframeForSheet7['Probable Reporting Error']  !=  0]
-        FList4_copy = dataframeForSheet7["Checks (PRE)"].tolist()
-        dataframeForSheet7_updated = dataframeForSheet7[['Facility Name', 'Sub-district', 'District', 'State', 'Probable Reporting Error', 'Checks (PRE)']].fillna('Not Available in Dataset')
-        # dataframeForSheet7['Facility Name'] = dataframeForSheet7[['Facility Name', 'Block', 'Sub-district', 'District', 'State']].apply(lambda x: ' / '.join(x), axis=1)
-        dataframeForSheet7['Facility Name'] = dataframeForSheet7_updated['Facility Name'] + " / " + " / " + dataframeForSheet7_updated['Sub-district'] + " / " + dataframeForSheet7_updated['District'] + " / " + dataframeForSheet7_updated['State'] 
-        dataframeForSheet7.rename(columns = {'Facility Name':'Facility Name/ Sub-District/ District/ State'}, inplace=True)
+        FList4_copy = dataframeForSheet7["Checks (INCBlnk)"].tolist()
+        dataframeForSheet7 = dataframeForSheet7[['DATE', 'Facility Name', 'Sub-district', 'District', 'State', 'Probable Reporting Error', 'Checks (INCBlnk)']].fillna('Not Available in Dataset')
 
-        '''  To find percentage Facility Type Wise   '''
+
+        '''  To find percentage Facility Type Wise  '''
                                                     
         # For Health Sub Centre
-        if FType == 'Health Sub Centre':
-            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/31 * 100
-            final_result_summ2['PercentagePRErr'] = final_result_summ2['Probable Reporting Error']/ 31 * 100
+        if FType == 'HWC-SC/SC':
+            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/11 * 100
+            final_result_summ2['PercentageINCBlnkrr'] = final_result_summ2['Probable Reporting Error']/ 11 * 100
         
         # For Primary Health Centre
         elif FType == 'Primary Health Centre':
-            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/78 * 100
-            final_result_summ2['PercentagePRErr'] = final_result_summ2['Probable Reporting Error']/ 78 * 100
+            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/26 * 100
+            final_result_summ2['PercentageINCBlnkrr'] = final_result_summ2['Probable Reporting Error']/ 26 * 100
 
         # For Community Health Centre
         elif FType == 'Community Health Centre':
-            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/83 * 100
-            final_result_summ2['PercentagePRErr'] = final_result_summ2['Probable Reporting Error']/ 83 * 100
+            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/24 * 100
+            final_result_summ2['PercentageINCBlnkrr'] = final_result_summ2['Probable Reporting Error']/ 24 * 100
 
         # For Sub District Hospital
         elif FType == 'Sub District Hospital':
-            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/85 * 100
-            final_result_summ2['PercentagePRErr'] = final_result_summ2['Probable Reporting Error']/ 85 * 100
+            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/22 * 100
+            final_result_summ2['PercentageINCBlnkrr'] = final_result_summ2['Probable Reporting Error']/ 22 * 100
 
         # For District Hospital
         elif FType == 'District Hospital':
-            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/85 * 100
-            final_result_summ2['PercentagePRErr'] = final_result_summ2['Probable Reporting Error']/ 85 * 100
+            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/22 * 100
+            final_result_summ2['PercentageINCBlnkrr'] = final_result_summ2['Probable Reporting Error']/ 22 * 100
         
         ## Deleting unnecessary columns
         del final_result_summ2['Checks (Inconsistent)']
-        del final_result_summ2['Checks (PRE)']
-        del final_result_summ2['Sub-district']
+        del final_result_summ2['Checks (INCBlnk)']
+
+        try:
+            del final_result_summ2['Sub-district']
+        except:
+            pass
+
         # del final_result_summ2['Block']
 
         def select_col(X):
@@ -2700,7 +2801,7 @@ class Ui_TabWidget(QWidget):
                             'background-color: #00FF00',        #5-10% L GREEN
                                 'background-color: #00AF5F',    #<5% GREEN
                                     ' ']
-   
+
                 
             mask_AllBlank = (X['All Blank'] == 'Yes')   
             mask_16 = (X['Inconsistent'] == 0)
@@ -2718,42 +2819,398 @@ class Ui_TabWidget(QWidget):
         return final_result_summ1, final_result_summ2, dataframeForSheet4, dataframeForSheet5, dataframeForSheet6, dataframeForSheet7
 
 
-    # EXPORT FILE
-    # ===========
+
+    ###! TO GENERATE REPORT BY CHECKS
+    ###! ----------------------------
+    ###! ----------------------------
+    def summaryReportByChecks(self, df):
+        global final_result_summ1, final_result_summ2, final_result_summ2_For_SubPlots,col_sum, dft_ARFacilityWise, dft_ARCheckWiseInc, \
+                FList1, dft_ARCheckWiseINCBlnk, FList2, dft_FacilityWiseINCBlnkINCBlnk, dataframeForSheet6, dataframeForSheet7, FList3_copy, FList3, \
+                    FList4, FList4_duplicate, dataframeForSheet4, dataframeForSheet5, FList2_copy, FList4_copy, df_Test_Plot_Inc_State, \
+                        df_Test_Plot_INCBlnk_State, count_df_Test_Plot_Inc_State, count_df_Test_Plot_INCBlnk_State
+
+        self.indicator_Description(df)
+
+        '''
+        ## First Summary Report
+        ## ---------------------
+        '''
+        count_Inconsistent = []
+        count_IncDueToBlank = []
+
+        Columns = list(df_SummReport.columns.values.tolist())
+
+        for col_name in Columns:
+            
+            try:
+                c2 = df_SummReport[col_name].str.match("^Inconsistent [0-9a-zA-Z]*\.[0-9a-zA-Z]*").sum()
+                count_Inconsistent.append(c2)
+
+                c4 = df_SummReport[col_name].str.count("^Inconsistent due to blank [0-9a-zA-Z]*\.[0-9a-zA-Z]*").sum()
+                count_IncDueToBlank.append(c4)
+            except:
+                count_Inconsistent.append(0)
+                count_IncDueToBlank.append(0)
+              
+
+        print(len(val_Description), len(count_Inconsistent), len(count_IncDueToBlank))   
+
+        # To show facilities in a column
+        colInterest = df['Facility Name'].to_numpy() # Give column names in addition
+
+        #!''' For Inconsistent '''
+        inconsistent_list = []
+
+        lg = len(df_SummReport.columns)
+
+        for i in range(0, lg):
+            temp = []
+            colComparison = df_SummReport.iloc[:,i]
+            colComparison = colComparison.tolist()
+            for j in range(0, len(colComparison)):
+                primString = colComparison[j]
+                
+                pattern = re.compile("^Inconsistent [0-9a-zA-Z]*\.[0-9a-zA-Z]*")
+                if pattern.match(str(primString)):
+                    temp.append(colInterest[j])
+                else:
+                    continue
+
+            inconsistent_list.append(temp)           
+
+        #!''' For INCBlnk '''
+        INCBlnk_list = []
+        # TO show facility in the sheet5
+        lg = len(df_SummReport.columns)
+
+        for i in range(0, lg):
+            temp = []
+            colComparison = df_SummReport.iloc[:,i]
+            colComparison = colComparison.tolist()
+            for j in range(0, len(colComparison)):
+                primString = colComparison[j]
+
+                pattern = re.compile("^Inconsistent due to blank [0-9a-zA-Z]*\.[0-9a-zA-Z]*")
+                if pattern.match(str(primString)):
+                    temp.append(colInterest[j])
+                else:
+                    continue
+
+            INCBlnk_list.append(temp)      
+
+
+        final_result_summ1 = pd.DataFrame({"Conditions": df_SummReport.columns, 
+                                            "Description": val_Description,
+                                                "Facilities(Name) Showing Inconsistent": inconsistent_list,
+                                                    "Inconsistent": count_Inconsistent,
+                                                        "Facilities (Name) Showing Inconsistent due to blank": INCBlnk_list,
+                                                            "Inconsistent due to blank": count_IncDueToBlank,
+                                                            })
+
+        final_result_summ1 = final_result_summ1.sort_values(by=['Inconsistent'], ascending=False)
+        final_result_summ1 = final_result_summ1.reset_index(drop=True)
+
+        dataframeForSheet4 = final_result_summ1[['Conditions', 'Description', 'Inconsistent', 'Facilities(Name) Showing Inconsistent']]
+        dataframeForSheet5 = final_result_summ1[['Conditions', 'Description', 'Inconsistent due to blank', 'Facilities (Name) Showing Inconsistent due to blank']]
+
+        dataframeForSheet5 = dataframeForSheet5[dataframeForSheet5['Inconsistent due to blank']  !=  0]
+
+        FList1 = final_result_summ1["Facilities(Name) Showing Inconsistent"].tolist()
+        FList2 = final_result_summ1["Facilities (Name) Showing Inconsistent due to blank"].tolist()
+
+        # Total number of rows in the upoaded dataset
+        count_rows = df_SummReport.shape[0]
+        
+        FList2_copy = dataframeForSheet5["Facilities (Name) Showing Inconsistent due to blank"].tolist()    
+
+        # Percentage for Validation Summary Sheet to show color codes
+        final_result_summ1['PerIncSheet1'] = final_result_summ1['Inconsistent']/count_rows*100
+        final_result_summ1['Inconsistent'].value_counts()
+        final_result_summ1['PerINCBlnkrrSheet1'] = final_result_summ1['Inconsistent due to blank']/count_rows*100
+
+        len0 = len(final_result_summ1['PerIncSheet1'])
+        len1 = len(final_result_summ1['PerINCBlnkrrSheet1'])
+
+        # Deleting unnecessary columns
+        # del final_result_summ1['PerIncSheet1']
+        # del final_result_summ1['PerINCBlnkrrSheet1']
+            
+        def select_col_SumSheet(X):
+            # COLORS
+            c = ['background-color:  #EF5350',                  #   >=25% RED
+                        'background-color: #FFAF00',            #   10 - 25% LIGHTER RED
+                            'background-color: #C0C000',        #   5 - 10% MORE LIGHTER RED
+                                'background-color: #00AF5F',    #   < 5% LIGHTEST RED
+                                    ' ']
+
+            mask_30 = (X['Inconsistent'] == 0)
+            cnt30 = mask_30.values.sum()
+            mask_29 = (X['Inconsistent due to blank'] == 0)
+            cnt29 = mask_29.values.sum()
+
+            #DataFrame with same index and columns names as original filled empty strings
+            df1 =  pd.DataFrame(c[4], X.index, columns=X.columns)
+            df1.loc[mask_29, 'Inconsistent due to blank'] = c[3]
+            df1.loc[mask_30, 'Inconsistent'] = c[3]
+
+            return df1
+
+        # Remoiving inconsistent facility names from validation summary sheet
+        final_result_summ1.drop(['Facilities(Name) Showing Inconsistent'], axis = 1, inplace=True)
+        # Remoiving INCBlnk facility names from validation summary sheet
+        final_result_summ1.drop(['Facilities (Name) Showing Inconsistent due to blank'], axis = 1, inplace=True)
+
+        final_result_summ1 = final_result_summ1.style.apply(select_col_SumSheet, axis=None)
+
+
+        '''
+        ## Second Summary Report
+        ## --------------------
+        '''
+        summ2_countInconsistent = []
+        summ2_countProbableRErr = []
+        All_Blank = []
+
+        # Iterating over indices of each row and calculating number of Blanks for each Facility Name 
+        for index in range(len(df_SummReport)):
+            '''   For no. of Inconsistent   '''
+            if df_SummReport.iloc[index, :].str.match("^Inconsistent [0-9a-zA-Z]*\.[0-9a-zA-Z]*").sum() > 0:
+                inconsistent = df_SummReport.iloc[index, :].str.match("^Inconsistent [0-9a-zA-Z]*\.[0-9a-zA-Z]*").sum()
+                summ2_countInconsistent.append(inconsistent)
+            else:
+                summ2_countInconsistent.append(0)
+            
+            '''   For no. of Probable Reporting Errors   '''
+            if df_SummReport.iloc[index, :].str.match('^Inconsistent due to blank [0-9a-zA-Z]*\.[0-9a-zA-Z]*').sum() > 0:
+                probableRErr = df_SummReport.iloc[index, :].str.match('^Inconsistent due to blank [0-9a-zA-Z]*\.[0-9a-zA-Z]*').sum()
+                summ2_countProbableRErr.append(probableRErr)
+            else:
+                summ2_countProbableRErr.append(0)
+
+            blank = df_SummReport.iloc[index, :].str.count("Blank").sum()
+            if blank == len(df_SummReport.columns):
+                All_Blank.append('Yes')
+            else:
+                All_Blank.append('No')
+
+
+        #########################################################   
+        #  Facility Specific Inconsistent (Sheet 6)     
+        
+        ''' For Inconsistent '''
+        # **********************
+        inc_list = []
+
+        lg = len(df_SummReport.columns)
+        len_df = df_SummReport.shape[0]
+
+        for i in range(0, len_df):
+            temp = []
+
+            colComparison = df_SummReport.iloc[i,:]
+            for j in range(0, lg):
+                primString = colComparison[j]
+
+                pattern = re.compile("^Inconsistent [0-9a-zA-Z]*\.[0-9a-zA-Z]*")
+                if pattern.match(str(primString)):
+                    txt = primString.replace('nan', "NA")
+                    temp.append(txt)
+
+            inc_list.append(temp)
+
+        ''' For INCBlnk '''
+        # *************
+        incblnk_list = []
+
+        lg = len(df_SummReport.columns)
+        len_df = df_SummReport.shape[0]
+
+        for i in range(0, len_df):
+            temp = []
+
+            colComparison = df_SummReport.iloc[i,:]
+            for j in range(0, lg):
+                primString = colComparison[j]
+
+                pattern = re.compile("^Inconsistent due to blank [0-9a-zA-Z]*\.[0-9a-zA-Z]*")
+                if pattern.match(str(primString)):
+                    txt = primString.replace('nan', "NA")
+                    temp.append(txt)
+
+            incblnk_list.append(temp)
+
+
+        ###################################################
+        final_result_summ2 = pd.DataFrame({
+                                            "DATE": df['DATE'].values.tolist(),
+                                                "State": df['State'].values.tolist(),
+                                                    "District": df['District Name'].values.tolist(),
+                                                        "Sub-district": df['Sub-District Name'].values.tolist(),
+                                                            # "Block": df['Block Name'].tolist(),
+                                                                "Facility Name": colInterest,
+                                                                    "Inconsistent": summ2_countInconsistent,
+                                                                        "Inconsistent due to blank": summ2_countProbableRErr,
+                                                                            "All Blank": All_Blank,
+                                                                                "Checks (Inconsistent)" : inc_list,
+                                                                                    "Checks (Inconsistent due to blank)": incblnk_list
+                                                                                    })
+
+
+        # Sorting in alphabetical  order
+        final_result_summ2 = final_result_summ2.sort_values(by=['Inconsistent'], ascending=False)
+        final_result_summ2 = final_result_summ2.reset_index(drop=True)
+
+    
+        Counter(final_result_summ2['District'])
+        Counter(final_result_summ2['Inconsistent'])
+        Counter(final_result_summ2['Inconsistent due to blank'])
+
+        df_Test_Plot_Inc_State = final_result_summ2.groupby('State').apply(lambda x: x[x['Inconsistent'] > 0].count())['Inconsistent'].nlargest(5)
+        ###? Dictionary having count of Inconsistents state wise
+        count_df_Test_Plot_Inc_State = df_Test_Plot_Inc_State.to_dict()
+
+        df_Test_Plot_INCBlnk_State = final_result_summ2.groupby('State').apply(lambda x: x[x['Inconsistent due to blank'] > 0].count())['Inconsistent due to blank'].nlargest(5)
+        ###? Dictionary having count of INCBlnk state wise
+        count_df_Test_Plot_INCBlnk_State = df_Test_Plot_INCBlnk_State.to_dict()
+
+        ##!## Extract names of top five states
+        FINAL_RESULT_2 = final_result_summ2.copy()
+        LIST_Test_Plot_Inc_State = list(count_df_Test_Plot_Inc_State)
+        final_result_summ2_For_SubPlots = FINAL_RESULT_2[FINAL_RESULT_2['State'].isin(LIST_Test_Plot_Inc_State)]
+
+        FList3 = final_result_summ2["Checks (Inconsistent)"].tolist()
+        FList4 = final_result_summ2["Checks (Inconsistent due to blank)"].tolist()
+
+        FList4_duplicate = list(filter(None, FList4))
+
+        ##################### Facility-wise Inconsistencies ########################
+        dataframeForSheet6 = final_result_summ2[['DATE', 'Facility Name', 'Sub-district', 'District', 'State', 'Inconsistent', 'Checks (Inconsistent)']]
+        dataframeForSheet6 = dataframeForSheet6[['DATE','Facility Name', 'Sub-district', 'District', 'State', 'Inconsistent', 'Checks (Inconsistent)']].fillna('Not Available in Dataset')
+        
+        ##################### Facility-wise Inconsistencies due to blank ########################
+        dataframeForSheet7 = final_result_summ2[['DATE', 'Facility Name', 'Sub-district', 'District', 'State', 'Inconsistent due to blank', 'Checks (Inconsistent due to blank)']]
+        dataframeForSheet7 = dataframeForSheet7[dataframeForSheet7['Inconsistent due to blank']  !=  0]
+        FList4_copy = dataframeForSheet7["Checks (Inconsistent due to blank)"].tolist()
+        dataframeForSheet7 = dataframeForSheet7[['DATE', 'Facility Name', 'Sub-district', 'District', 'State', 'Inconsistent due to blank', 'Checks (Inconsistent due to blank)']].fillna('Not Available in Dataset')
+
+
+        '''  To find percentage Facility Type Wise   '''
+        ###? -------------------------------------------
+                                                    
+        # For Health Sub Centre
+        if FType == 'HWC-SC/SC':
+            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/11 * 100
+            final_result_summ2['PercentageINCBlnkrr'] = final_result_summ2['Inconsistent due to blank']/ 11 * 100
+        
+        # For Primary Health Centre
+        elif FType == 'Primary Health Centre':
+            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/26 * 100
+            final_result_summ2['PercentageINCBlnkrr'] = final_result_summ2['Inconsistent due to blank']/ 26 * 100
+
+        # For Community Health Centre
+        elif FType == 'Community Health Centre':
+            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/24 * 100
+            final_result_summ2['PercentageINCBlnkrr'] = final_result_summ2['Inconsistent due to blank']/ 24 * 100
+
+        # For Sub District Hospital
+        elif FType == 'Sub District Hospital':
+            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/22 * 100
+            final_result_summ2['PercentageINCBlnkrr'] = final_result_summ2['Inconsistent due to blank']/ 22 * 100
+
+        # For District Hospital
+        elif FType == 'District Hospital':
+            final_result_summ2['PercentageInc'] = final_result_summ2['Inconsistent']/22 * 100
+            final_result_summ2['PercentageINCBlnkrr'] = final_result_summ2['Inconsistent due to blank']/ 22 * 100
+        
+        ## Deleting unnecessary columns
+        del final_result_summ2['Checks (Inconsistent)']
+        del final_result_summ2['Checks (Inconsistent due to blank)']
+
+        try:
+            del final_result_summ2['Sub-district']
+        except:
+            pass
+
+
+        def select_col(X):
+            global c
+            # COLORS
+            # ******
+            c = ['background-color:  #EF5350',                  #>=50% RED
+                    'background-color: #FFAF00',                #25-50% ORANGE
+                        'background-color: #C0C000',            #10-25% YELLOW
+                            'background-color: #00FF00',        #5-10% L GREEN
+                                'background-color: #00AF5F',    #<5% GREEN
+                                    ' ']
+
+                
+            mask_AllBlank = (X['All Blank'] == 'Yes')   
+            mask_16 = (X['Inconsistent'] == 0)
+            mask_15 = (X['Inconsistent due to blank'] == 0)
+
+            #DataFrame with same index and columns names as original filled empty strings
+            df1 =  pd.DataFrame(c[5], X.index, columns=X.columns)
+            df1.loc[mask_AllBlank, 'All Blank'] = c[0]
+            df1.loc[mask_15, 'Inconsistent due to blank'] = c[4]
+            df1.loc[mask_16, 'Inconsistent'] = c[4]
+            return df1
+
+        final_result_summ2 = final_result_summ2.style.apply(select_col, axis=None)
+
+        return final_result_summ1, final_result_summ2, dataframeForSheet4, dataframeForSheet5, dataframeForSheet6, dataframeForSheet7
+
+
+    ####? ----------------------------------------- EXPORT FILE ------------------------------------
+    ####* ==========================================================================================
     def export(self):
         global filename, table_result1, table_result2, table_result3, table_result4, table_result5, table_result6
-        try:
-            # Save file dialog
+     
+        # Save file dialog
+        UI_Val = Ui_Dialog_Validate()
+        UI_Val.exec_()
+        
+        # try:
+        if UI_Val.Flag == 'Summary_Report_By_Checks':
+            table_result1, table_result2, table_result3, table_result4, table_result5, table_result6  = self.summaryReportByChecks(df)
             filename = QFileDialog.getSaveFileName(TabWidget, "Save to Excel", "Validated Results Summary Sheet",
-                                                    "Excel Spreadsheet (*.xlsx);;"
-                                                    "All Files (*)")[0]
-
-            # self.popup.start_progress()
-            
-
-            table_result1, table_result2, table_result3, table_result4, table_result5, table_result6  = self.summaryReport(df)
-        except:
-            msg = QMessageBox()
-            msg.setWindowTitle("Saving File Error Message / फ़ाइल सहेजें त्रुटि संदेश")
-            msg.setIcon(QMessageBox.Critical)
-            msg.setText("\n First validate your uploaded data ! / पहले अपने अपलोड किए गए डेटा को सत्यापित करें !")
-            msg.exec()
-        finally:
+                                            "Excel Spreadsheet (*.xlsx);;"
+                                            "All Files (*)")[0]
+        elif UI_Val.Flag == 'Summary_Report_By_Blanks':
+            table_result1, table_result2, table_result3, table_result4, table_result5, table_result6  = self.summaryReportByBlanks(df)
+            filename = QFileDialog.getSaveFileName(TabWidget, "Save to Excel", "Validated Results Summary Sheet",
+                                            "Excel Spreadsheet (*.xlsx);;"
+                                            "All Files (*)")[0]
+                
+        # except:
+        # try:
+        if UI_Val.Flag == 'Summary_Report_By_Blanks':
+            table_result1, table_result2, table_result3, table_result4, table_result5, table_result6  = self.summaryReportByBlanks(df)
+            filename = QFileDialog.getSaveFileName(TabWidget, "Save to Excel", "Validated Results Summary Sheet",
+                                            "Excel Spreadsheet (*.xlsx);;"
+                                            "All Files (*)")[0]
+        elif UI_Val.Flag == 'Summary_Report_By_Checks':
+            table_result1, table_result2, table_result3, table_result4, table_result5, table_result6  = self.summaryReportByChecks(df)
+            filename = QFileDialog.getSaveFileName(TabWidget, "Save to Excel", "Validated Results Summary Sheet",
+                                            "Excel Spreadsheet (*.xlsx);;"
+                                            "All Files (*)")[0]
+        # except:
+        #     pass
+        # finally:
+        #     pass
+        
+        try:
             if table_result1 != "":
                 self.saveFile()
+        except:
+            pass
 
-        # self.popup.close()
-
-        return df, filename, table_result1, table_result2, table_result3, table_result4, table_result5, table_result6
+        try:
+            return df, filename, table_result1, table_result2, table_result3, table_result4, table_result5, table_result6
+        except:
+            pass
 
 
     def saveFile(self):
-
-        # Rename orignal headers
-        # df.rename(res_dict , axis=1, inplace=True)
-
-        ## RENAMING
-        #df.rename(columns={"col_14": "Facility Name", "col_3": "State", "col_5": "District Name", "col_7": "Sub-District Name", "col_18": "Rural/Urban", "col_19": "Ownership",}, inplace=True)
 
         new_list = [["Description about the output sheets:"]]
         table_result_content = pd.DataFrame(new_list)
@@ -2762,13 +3219,15 @@ class Ui_TabWidget(QWidget):
             self.reopenAndDesignExcel(filename, table_result_content, table_result1, table_result2, table_result3, table_result4, table_result5, table_result6)
 
 
-    ### Saving Validated Data
+    ###! Saving Validated Data
+    ###  ---------------------
     def saveValidatedData(self, *args, **kwargs):
+
         try:
             # Save file dialog
             filename = QFileDialog.getSaveFileName(TabWidget, "Save to Excel", "Validated Data Summary Sheet",
-                                                    "Excel Spreadsheet (*.xlsx);;"
-                                                    "All Files (*)")[0]
+                                                        "Excel Spreadsheet (*.xlsx);;"
+                                                            "All Files (*)")[0]
 
             
             writer = pd.ExcelWriter(filename, engine='xlsxwriter')
@@ -2799,11 +3258,10 @@ class Ui_TabWidget(QWidget):
             # Create the messagebox object
             self.msg = QMessageBox()
             # Set the information icon
-            self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+            self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
             self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
             # Set the main message
-            self.msg.setText(
-                "\n Validated Data File Exported / Validated Data फ़ाइल निर्यात की गई ")
+            self.msg.setText("\n Validated Data File Exported / Validated Data फ़ाइल निर्यात की गई ")
             # Set the title of the window
             self.msg.setWindowTitle(" Data File is exported / डेटा फ़ाइल निर्यात की गई ")
             # Display the message box
@@ -2822,27 +3280,17 @@ class Ui_TabWidget(QWidget):
     ###################################################################################
     ########################## Reopen excel and start processes
     def reopenAndDesignExcel(self, filename, table_result_content, table_result1, table_result2, table_result3, table_result4, table_result5, table_result6):
-
-        # self.popup.start_progress()
-
-        del table_result5['Sub-district']
-        del table_result5['District']
-        del table_result5['State']
-
-        del table_result6['Sub-district']
-        del table_result6['District']
-        del table_result6['State']
-
+        
         table_result3 = table_result3[table_result3.Inconsistent  !=  0]
         table_result5 = table_result5[table_result5.Inconsistent  !=  0]
         # table_result4 = table_result3[table_result3.Inconsistent  !=  0]
         # table_result6 = table_result5[table_result5.Inconsistent  !=  0]
         
         # Taking transpose of data 
-        table_result3 = table_result3.T
-        table_result4 = table_result4.T
-        table_result5 = table_result5.T
-        table_result6 = table_result6.T
+        table_result3 = table_result3[:101].T
+        table_result4 = table_result4[:101].T
+        table_result5 = table_result5[:101].T
+        table_result6 = table_result6[:101].T
 
         # try:
         # exporting to excel
@@ -2851,10 +3299,10 @@ class Ui_TabWidget(QWidget):
             table_result_content.to_excel(writer, sheet_name='Description', engine='openpyxl')
             table_result2.to_excel(writer, sheet_name='Facility-level summary', engine='openpyxl')
             table_result5.to_excel(writer, sheet_name='Facility-wise inconsistencies', engine='openpyxl')
-            table_result6.to_excel(writer, sheet_name='Facility-wise PRE', engine='openpyxl')
+            table_result6.to_excel(writer, sheet_name='Facility-wise Inc due to blank', engine='openpyxl')
             table_result1.to_excel(writer, sheet_name='Validation rule wise summary', engine='openpyxl')
             table_result3.to_excel(writer, sheet_name='Inconsistency-wise facilities', engine='openpyxl')
-            table_result4.to_excel(writer, sheet_name='PRE-wise facilities', engine='openpyxl')
+            table_result4.to_excel(writer, sheet_name='Inc due to blank-wise facility', engine='openpyxl')
 
             # with pd.ExcelWriter(filename) as writer: 
             # df.to_excel(writer, sheet_name='Validated data', engine='openpyxl')
@@ -2875,154 +3323,25 @@ class Ui_TabWidget(QWidget):
         workbook = load_workbook(filename)
         sheet_0 = workbook['Description']
         sheet = workbook['Facility-level summary']
+        sheet_4 = workbook['Facility-wise inconsistencies']
+        sheet_5 = workbook['Facility-wise Inc due to blank']
         sheet_1 = workbook['Validation rule wise summary']
         sheet_2 = workbook['Inconsistency-wise facilities']
-        sheet_3 = workbook['PRE-wise facilities']
-        sheet_4 = workbook['Facility-wise inconsistencies']
-        sheet_5 = workbook['Facility-wise PRE']
-        # sheet_6 = workbook['Validated data'] 
+        sheet_3 = workbook['Inc due to blank-wise facility']
+        
 
         # Activating sheets 
+        workbook.active = sheet_0
         workbook.active = sheet
         workbook.active = sheet_1
+        workbook.active = sheet_2
+        workbook.active = sheet_3
         workbook.active = sheet_4
+        workbook.active = sheet_5
 
+        # ### Adding Gridlines
         sheet.sheet_view.showGridLines = False
         sheet_1.sheet_view.showGridLines = False
-
-        ''' THE CODE FOR GENERATING HYPERLINKS '''
-        # Function to generate sequences according to the excel sheet
-        def excel_cols_link3():
-            n1 = 1
-            while True:
-                yield from (''.join(group) for group in itertools.product(string.ascii_uppercase, repeat=n1))
-                n1 += 1
-
-        # Function to generate sequences according to the excel sheet
-        def excel_cols_link4():
-            n2 = 1
-            while True:
-                yield from (''.join(group) for group in itertools.product(string.ascii_uppercase, repeat=n2))
-                n2 += 1
-
-        ## Formatting Sheet{Facility Level Summary}
-        try:
-            sheet.move_range("A1:I10000", rows=1)
-        except:
-            sheet.move_range("A1:I25000", rows=1)
-            try:
-                sheet.move_range("A1:I50000", rows=1)
-            except:
-                sheet.move_range("A1:I100000", rows=1)
-            finally:
-                sheet.move_range("A1:I1048576", rows=1)
-
-
-        ## ADDING HEADER IN Facility Level Summary
-        sheet.oddHeader.center.text = "Facility Level Summary"
-        sheet.oddHeader.center.size = 18
-        sheet.oddHeader.center.font = "Tahoma,Bold"
-        sheet.oddHeader.center.color = "CC3366"
-        sheet.cell(row=1, column=3).value = 'Facility Level Summary'
-        sheet.cell(row=2, column=1).value = 'Sr. No'
-        sheet.cell(row=2, column=4).value = 'Facility Name'
-        sheet['C1'].font = Font(size = 18, bold = True, color="003679")  
-
-        ## EXPANDING ROWS OF SHEET (FACILITY LEVEL SUMMARY)
-        sheet.column_dimensions['D'].width = 20
-        sheet.column_dimensions['E'].width = 15
-        sheet.column_dimensions['F'].width = 25
-
-        
-       
-        cnt1, cnt2, cnt3, cnt4, cnt5 = 0, 0, 0, 0, 0
-        for i in range(len(FList3)):
-            if sheet.cell(row=i+3, column=8).value == None:
-                sheet.delete_rows(i+3, 1)
-            elif sheet.cell(row=i+3, column=8).value >= 50:
-                cnt1 += 1
-            elif sheet.cell(row=i+3, column=8).value < 50 and sheet.cell(row=i+3, column=8).value >= 25:
-                cnt2 += 1
-            elif sheet.cell(row=i+3, column=8).value < 25 and sheet.cell(row=i+3, column=8).value >= 10:
-                cnt3 += 1
-            elif sheet.cell(row=i+3, column=8).value < 10 and sheet.cell(row=i+3, column=8).value >= 5:
-                cnt4 += 1
-            elif sheet.cell(row=i+3, column=8).value < 5:
-                cnt5 += 1
-
-            for j in range(len(FList3[i])):
-                '''
-                # Create hyperlink to relevant cell
-                '''
-                link1 = "#'Facility-wise Inconsistencies'!B2"
-
-                l1 = list(itertools.islice(excel_cols_link3(), len(FList3)+1))
-
-                #update link
-                link1 = link1.replace("B", l1[i+1])
-
-                sheet.cell(row=i+3, column=5).hyperlink = link1
-                sheet.cell(row=i+3, column=5).style = "Hyperlink"
-
-                if sheet.cell(row=i+3, column=8).value >= 50:
-                    sheet.cell(row=i+3, column=5).fill = PatternFill(fgColor='EF5350', fill_type = "solid") 
-                elif sheet.cell(row=i+3, column=8).value < 50 and sheet.cell(row=i+3, column=8).value >= 25:
-                    sheet.cell(row=i+3, column=5).fill = PatternFill(fgColor='FFAF00', fill_type = "solid")
-                elif sheet.cell(row=i+3, column=8).value < 25 and sheet.cell(row=i+3, column=8).value >= 10:
-                    sheet.cell(row=i+3, column=5).fill = PatternFill(fgColor='C0C000', fill_type = "solid")
-                elif sheet.cell(row=i+3, column=8).value < 10 and sheet.cell(row=i+3, column=8).value >= 5:
-                    sheet.cell(row=i+3, column=5).fill = PatternFill(fgColor='00FF00', fill_type = "solid")
-                elif sheet.cell(row=i+3, column=8).value < 5:
-                    sheet.cell(row=i+3, column=5).fill = PatternFill(fgColor='00AF5F', fill_type = "solid")
-
-
-        link2 = "#'Facility-wise PRE'!B2"
-        l2 = list(itertools.islice(excel_cols_link4(), dataframeForSheet7.shape[0]+1))
-
-        # for i in range(len(FList4)):
-        k = 0
-        for i in range(len(FList4)):
-            if sheet.cell(row=i+3, column=6).value == 0:
-                k = k + 1 
-            if sheet.cell(row=i+3, column=6).value != 0 and sheet.cell(row=i+2, column=6).value == 0:
-                if k == 1:
-                    link2 = "#'Facility-wise PRE'!"+ l2[i] +"2"
-                    print('i=', i, "cell=", sheet.cell(row=i+3, column=6), "Value=", sheet.cell(row=i+3, column=6).value, 'link=', link2)
-                elif k > 1:
-                    link2 = "#'Facility-wise PRE'!"+ l2[i+1-k] +"2"
-                    print('i=', i, "cell=", sheet.cell(row=i+3, column=6), "Value=", sheet.cell(row=i+3, column=6).value, 'link=', link2)
-
-            elif sheet.cell(row=i+3, column=6).value != 0 and sheet.cell(row=i+2, column=6).value != 0:
-                link2 = "#'Facility-wise PRE'!"+ l2[i+1-k] +"2"   
-                print('i=', i, "celltype2=", sheet.cell(row=i+3, column=6), "Value=", sheet.cell(row=i+3, column=6).value, 'link=', link2)
-            else:
-                link2=None
-
-            sheet.cell(row=i+3, column=6).hyperlink = link2
-            sheet.cell(row=i+3, column=6).style = "Hyperlink"
-
-
-
-        cnt6, cnt7, cnt8, cnt9, cnt10 = 0, 0, 0, 0, 0
-        for i in range(len(FList4)):
-            if sheet.cell(row=i+3, column=9).value == None:
-                sheet.delete_rows(i+3, 1)
-            elif sheet.cell(row=i+3, column=9).value >= 50:
-                cnt6 += 1
-                sheet.cell(row=i+3, column=6).fill = PatternFill(fgColor='EF5350', fill_type = "solid")
-            elif sheet.cell(row=i+3, column=9).value < 50 and sheet.cell(row=i+3, column=9).value >= 25:
-                cnt7 += 1
-                sheet.cell(row=i+3, column=6).fill = PatternFill(fgColor='FFAF00', fill_type = "solid")
-            elif sheet.cell(row=i+3, column=9).value < 25 and sheet.cell(row=i+3, column=9).value >= 10:
-                cnt8 += 1
-                sheet.cell(row=i+3, column=6).fill = PatternFill(fgColor='C0C000', fill_type = "solid")
-            elif sheet.cell(row=i+3, column=9).value < 10 and sheet.cell(row=i+3, column=9).value >= 5:
-                cnt9 += 1
-                sheet.cell(row=i+3, column=6).fill = PatternFill(fgColor='00FF00', fill_type = "solid")
-            elif sheet.cell(row=i+3, column=9).value < 5:
-                cnt10 += 1
-                sheet.cell(row=i+3, column=6).fill = PatternFill(fgColor='00AF5F', fill_type = "solid")
-                    
 
         '''
         ADDING THICK BORDERS
@@ -3033,435 +3352,12 @@ class Ui_TabWidget(QWidget):
                             top=Side(style='thick'), 
                             bottom=Side(style='thick'))
 
-        ## Bordering Facility Level summary Sheet
-        for i in range(2, len(dataframeForSheet6)+3):
-            sheet.cell(row=i, column=2).border = thick_border
-            sheet.cell(row=i, column=3).border = thick_border
-            sheet.cell(row=i, column=4).border = thick_border
-            sheet.cell(row=i, column=5).border = thick_border
-            sheet.cell(row=i, column=6).border = thick_border
-            sheet.cell(row=i, column=7).border = thick_border
 
 
-        # Coloring and palettes of Facility Guidance Sheet
-        sheet['L4'] = 'Color Brackets'
-        sheet['L5'].fill = PatternFill(fgColor="EF5350", fill_type = "solid")
-        sheet['L6'].fill = PatternFill(fgColor="FFAF00", fill_type = "solid")
-        sheet['L7'].fill = PatternFill(fgColor="C0C000", fill_type = "solid")
-        sheet['L8'].fill = PatternFill(fgColor="00FF00", fill_type = "solid")
-        sheet['L9'].fill = PatternFill(fgColor="00AF5F", fill_type = "solid")
-
-        sheet["M4"] = "Range"
-        sheet["M5"] = ">= 50%"
-        sheet["M6"] = "25 - 50%"
-        sheet["M7"] = "10 - 25%"
-        sheet["M8"] = "5 - 10%"
-        sheet["M9"] = "< 5%"
-        sheet["M10"] = "Total Facilities"
-
-        sheet["N4"] = "Inconsistent"
-        sheet["N5"] = cnt1
-        sheet["N6"] = cnt2
-        sheet["N7"] = cnt3
-        sheet["N8"] = cnt4
-        sheet["N9"] = cnt5
-        sheet["N10"] = cnt1 + cnt2 + cnt3 + cnt4 + cnt5
-
-        sheet["O4"] = "Probable Reporting Error"
-        sheet["O5"] = cnt6
-        sheet["O6"] = cnt7
-        sheet["O7"] = cnt8
-        sheet["O8"] = cnt9
-        sheet["O9"] = cnt10
-        sheet["O10"] = cnt6 + cnt7 + cnt8 + cnt9 + cnt10
-
-
-        ''' 
-        GRAPH PLOTS
+        '''
+        *********************************** sheet_0 :: Description ***********************************
         '''
         
-        Ranges = ['< 5%', '5 - 10%' , '10 - 25%', '25 - 50%', '>= 50%']
-        Numbers_Inc = [cnt5, cnt4, cnt3, cnt2, cnt1]
-        Numbers_PRE = [cnt10, cnt9, cnt8, cnt7, cnt6]
-
-        ### ! TEST PLOT OF PIE CHART
-        fig = plt.figure(figsize= (10, 7))
-        plt.pie(df_Test_Plot['Inconsistent'].tolist()[:5], labels=df_Test_Plot.index[:5])
-
-        import tempfile
-        with tempfile.NamedTemporaryFile() as temp_2:
-            plt.savefig(temp_2.name + ".png", dpi = 80)
-            img_2 = openpyxl.drawing.image.Image(temp_2.name + '.png')
-            img_2.anchor='Q25'
-            sheet.add_image(img_2)
-            temp_2.close()
-
-        
-        # plotting a bar graph
-        X_axis = np.arange(len(Ranges))
-
-        plt.bar(X_axis - 0.2, Numbers_Inc, 0.4, label = 'Number of Inconsistents')
-        plt.bar(X_axis + 0.2, Numbers_PRE, 0.4, label = 'Number of Probable Reporting Errors')
-        # figure(figsize=(8, 8), dpi=50)
-        plt.xticks(X_axis, Ranges)
-        plt.xlabel("Range of Errors")
-        plt.ylabel("Number of Facilities")
-        plt.legend()
-        plt.title('Facility Wise Error Summary')
-
-        import tempfile
-        with tempfile.NamedTemporaryFile() as temp:
-            plt.savefig(temp.name + ".png", dpi = 80)
-            img = openpyxl.drawing.image.Image(temp.name + '.png')
-            img.anchor='S2'
-            sheet.add_image(img)
-            temp.close()
-
-        workbook.save(filename=filename)
-        workbook.save(filename=filename)
-
-
-        # Attention Required Sheet (Inconsistent)
-        # =======================================
-
-        workbook.active = sheet_2
-        sheet_2.sheet_view.showGridLines = True
-
-        sheet_2['A1'] = "Inconsistency-wise facilities"
-        sheet_2.oddHeader.center.size = 18
-        sheet_2.oddHeader.center.font = "Tahoma,Bold"
-        sheet_2.oddHeader.center.color = "CC3366"
-        sheet_2['A1'].font = Font(size = 18, bold = True, color="003679")
-
-        ## Formatting Sheet_1{Validation Checkwise Summary}
-        try:
-            sheet_1.move_range("A1:G10000", rows=1)
-        except:
-            sheet_1.move_range("A1:G25000", rows=1)
-            try:
-                sheet_1.move_range("A1:G50000", rows=1)
-            except:
-                sheet_1.move_range("A1:G100000", rows=1)
-            finally:
-                sheet_1.move_range("A1:G1048576", rows=1)
-
-        sheet_1.oddHeader.center.text = "Validation Rule Wise Summary"
-        sheet_1.cell(row=2, column=1).value = 'Sr. No'
-        sheet_1.oddHeader.center.size = 14
-        sheet_1.oddHeader.center.font = "Tahoma,Bold"
-        sheet_1.oddHeader.center.color = "CC3366"
-        sheet_1.cell(row=1, column=2).value = 'Validation Rule Wise Summary'
-        sheet_1['B1'].font = Font(size = 18, bold = True, color="003679")
-
-        ## EXPANDING ROWS OF SHEET_1 (VALIDATION CHECKWISE SUMMARY)
-        sheet_1.column_dimensions['B'].width = 20
-        sheet_1.column_dimensions['C'].width = 20
-        sheet_1.column_dimensions['D'].width = 15
-        sheet_1.column_dimensions['E'].width = 25
-
-        # HYPERLINKING FUNCTIONS
-        def excel_cols_link1():
-            n1 = 1
-            while True:
-                yield from (''.join(group) for group in itertools.product(string.ascii_uppercase, repeat=n1))
-                n1 += 1
-
-        # HYPERLINKING FUNCTIONS
-        def excel_cols_link2():
-            n2 = 1
-            while True:
-                yield from (''.join(group) for group in itertools.product(string.ascii_uppercase, repeat=n2))
-                n2 += 1
-        
-        cnt21, cnt22, cnt23, cnt24 = 0, 0, 0, 0
-        for i in range(len(FList1)):
-            if sheet_1.cell(row=i+3, column=6).value == None:
-                sheet.delete_rows(i+3, 1)
-            elif sheet_1.cell(row=i+3, column=6).value >= 25:
-                cnt21 += 1
-            elif sheet_1.cell(row=i+3, column=6).value < 25 and sheet_1.cell(row=i+3, column=6).value >= 10:
-                cnt22 += 1
-            elif sheet_1.cell(row=i+3, column=6).value < 10 and sheet_1.cell(row=i+3, column=6).value >= 5:
-                cnt23 += 1
-            elif sheet_1.cell(row=i+3, column=6).value < 5:
-                cnt24 += 1
-
-            for j in range(len(FList1[i])):
-                sheet_2.cell(row=j+5,column=i+2).value = FList1[i][j]
-
-                '''
-                # Create hyperlink to relevant cell for sheet_1
-                '''
-                link1 = "#'Inconsistency-wise facilities'!B2"
-
-                l1 = list(itertools.islice(excel_cols_link1(), len(FList1)+1))
-                
-                ## update link and then hyperlink it
-                link1 = link1.replace("B", l1[i+1])
-                sheet_1.cell(row=i+3, column=4).hyperlink = link1
-                sheet_1.cell(row=i+3, column=4).style = "Hyperlink"
-
-                if sheet_1.cell(row=i+3, column=6).value >= 25:
-                    sheet_1.cell(row=i+3, column=4).fill = PatternFill(fgColor='EF5350', fill_type = "solid")
-                elif sheet_1.cell(row=i+3, column=6).value < 25 and sheet_1.cell(row=i+3, column=6).value >= 10:
-                    sheet_1.cell(row=i+3, column=4).fill = PatternFill(fgColor='FFAF00', fill_type = "solid")
-                elif sheet_1.cell(row=i+3, column=6).value < 10 and sheet_1.cell(row=i+3, column=6).value >= 5:
-                    sheet_1.cell(row=i+3, column=4).fill = PatternFill(fgColor='C0C000', fill_type = "solid")
-                elif sheet_1.cell(row=i+3, column=6).value < 5:
-                    sheet_1.cell(row=i+3, column=4).fill = PatternFill(fgColor='00AF5F', fill_type = "solid")
-
-            
-            sheet_2['A2'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-            sheet_2['A3'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-            sheet_2['A4'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-            sheet_2['A5'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-            sheet_2['A2'].font = Font(color = "FFFFFF")
-            sheet_2['A3'].font = Font(color = "FFFFFF")
-            sheet_2['A4'].font = Font(color = "FFFFFF")
-            sheet_2['A5'].font = Font(color = "FFFFFF")
-            sheet_2.column_dimensions['A'].width = 35
-            sheet_2.row_dimensions[2].height = 20
-            sheet_2.row_dimensions[3].height = 20
-            sheet_2.row_dimensions[4].height = 20
-            sheet_2.row_dimensions[5].height = 20   
-                
-        
-        workbook.save(filename=filename)
-
-
-        # (PRE-wise Facilities)
-        # =======================================
-        workbook.active = sheet_3
-
-        sheet_3.sheet_view.showGridLines = True
-        sheet_3['A1'] = "PRE-wise facilities"
-        sheet_3.oddHeader.center.size = 18
-        sheet_3.oddHeader.center.font = "Tahoma,Bold"
-        sheet_3.oddHeader.center.color = "CC3366"
-        sheet_3['A1'].font = Font(size = 18, bold = True, color="003679")
-
-
-        link3 = "#'Facility-wise PRE'!B2"
-        l3 = list(itertools.islice(excel_cols_link4(), dataframeForSheet5.shape[0]+1))
-
-        ##### Generating links 
-        k = 0
-        for i in range(len(FList2)):
-
-            if sheet_1.cell(row=i+3, column=5).value == 0:
-                k = k + 1 
-            if sheet_1.cell(row=i+3, column=5).value != 0 and sheet_1.cell(row=i+2, column=5).value == 0:
-                if k == 1:
-                    link3 = "#'PRE-wise facilities'!"+ l3[i] +"2"
-                    print('i=', i, "cell=", sheet_1.cell(row=i+3, column=5), "Value=", sheet_1.cell(row=i+3, column=5).value, 'link=', link3)
-                elif k > 1:
-                    link3 = "#'PRE-wise facilities'!"+ l3[i+1-k] +"2"
-                    print('i=', i, "cell=", sheet_1.cell(row=i+3, column=5), "Value=", sheet_1.cell(row=i+3, column=5).value, 'link=', link3)
-
-            elif sheet_1.cell(row=i+3, column=5).value != 0 and sheet_1.cell(row=i+2, column=5).value != 0:
-                link3 = "#'PRE-wise facilities'!"+ l3[i+1-k] +"2"
-                print('i=', i, "celltype2=", sheet_1.cell(row=i+3, column=5), "Value=", sheet_1.cell(row=i+3, column=5).value, 'link=', link3)
-            else:
-                link3=None
-
-            sheet_1.cell(row=i+3, column=5).hyperlink = link3
-            sheet_1.cell(row=i+3, column=5).style = "Hyperlink"
-
-
-
-        for cl in range(dataframeForSheet4.shape[0]):
-            # sheet_1.cell(row=cl+3, column=2).fill = PatternFill(fgColor='607D8B', fill_type = "solid")
-            # print(sheet_1.cell(row=cl+3, column=2).value)
-            for j in lst_highlight_mandatory_checks:
-                if sheet_1.cell(row=cl+3, column=2).value == j:
-                    print(sheet_1.cell(row=cl+3, column=2).value, j)
-                    sheet_1.cell(row=cl+3, column=2).fill = PatternFill(fgColor='607D8B', fill_type = "solid")
-                else:
-                    pass
-
-
-        cnt25, cnt26, cnt27, cnt28 = 0, 0, 0, 0
-        for i in range(len(FList2)):
-            if sheet_1.cell(row=i+3, column=7).value == None:
-                sheet_1.delete_rows(i+3, 1)
-            elif sheet_1.cell(row=i+3, column=7).value >= 25:
-                cnt25 += 1
-                sheet_1.cell(row=i+3, column=5).fill = PatternFill(fgColor='EF5350', fill_type = "solid")
-            elif sheet_1.cell(row=i+3, column=7).value < 25 and sheet_1.cell(row=i+3, column=7).value >= 10:
-                cnt26 += 1
-                sheet_1.cell(row=i+3, column=5).fill = PatternFill(fgColor='FFAF00', fill_type = "solid")
-            elif sheet_1.cell(row=i+3, column=7).value < 10 and sheet_1.cell(row=i+3, column=7).value >= 5:
-                cnt27 += 1
-                sheet_1.cell(row=i+3, column=5).fill = PatternFill(fgColor='C0C000', fill_type = "solid")
-            elif sheet_1.cell(row=i+3, column=7).value < 5:
-                cnt28 += 1
-                sheet_1.cell(row=i+3, column=5).fill = PatternFill(fgColor='00AF5F', fill_type = "solid")
-
-        ################# RESPONSIBLE FOR EXPANDING FACILITY NAMES IN THE  (PRE-wise facilities)
-        for i in range(dataframeForSheet5.shape[0]):   
-            ########### FILLING VALUES #####################
-            for j in range(len(FList2_copy[i])):
-                sheet_3.cell(row=j+5,column=i+2).value = FList2_copy[i][j]
-
-                
-            # # Colors
-            # for k in range(1, len(FList2[i])+100):
-            #     sheet_3.cell(row=4, column=i+1).alignment = Alignment(horizontal='center')
-            #     # sheet_3.cell(row=2, column=i+2).fill = PatternFill(fgColor="fff5be", fill_type = "solid")
-
-        sheet_3['A2'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-        sheet_3['A3'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-        sheet_3['A4'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-        sheet_3['A5'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-        sheet_3['A2'].font = Font(color = "FFFFFF")
-        sheet_3['A3'].font = Font(color = "FFFFFF")
-        sheet_3['A4'].font = Font(color = "FFFFFF")
-        sheet_3['A5'].font = Font(color = "FFFFFF")
-        sheet_3.column_dimensions['A'].width = 35
-        sheet_3.row_dimensions[2].height = 20
-        sheet_3.row_dimensions[3].height = 20
-        sheet_3.row_dimensions[4].height = 20
-        sheet_3.row_dimensions[5].height = 20   
-
-        # Coloring of Validation Summary Sheet
-        sheet_1['J5'] = "Color Brackets"
-        sheet_1['J6'].fill = PatternFill(fgColor="EF5350", fill_type = "solid")
-        sheet_1['J7'].fill = PatternFill(fgColor="FFAF00", fill_type = "solid")
-        sheet_1['J8'].fill = PatternFill(fgColor="C0C000", fill_type = "solid")
-        sheet_1['J9'].fill = PatternFill(fgColor="00AF5F", fill_type = "solid")
-
-        sheet_1['K5'] = "Range"
-        sheet_1['K6'] = ">= 25%"
-        sheet_1['K7'] = "10 - 25%"
-        sheet_1['K8'] = "5 - 10%"
-        sheet_1['K9'] = "< 5%"
-        sheet_1['K10'] = "Total Indicators"
-
-        sheet_1['L5'] = "Inconsistent"
-        sheet_1['L6'] = cnt21
-        sheet_1['L7'] = cnt22
-        sheet_1['L8'] = cnt23
-        sheet_1['L9'] = cnt24
-        sheet_1['L10'] = cnt21 + cnt22 + cnt23 + cnt24
-
-        sheet_1['M5'] = "Probable Reporting Error"
-        sheet_1['M6'] = cnt25
-        sheet_1['M7'] = cnt26
-        sheet_1['M8'] = cnt27
-        sheet_1['M9'] = cnt28
-        sheet_1['M10'] = cnt25 + cnt26 + cnt27 + cnt28
-
-        # Ranges_2 = ['< 5%', '5 - 10%' , '10 - 25%', '>= 25%']
-        # Numbers_Inc_2 = [cnt24, cnt23, cnt22, cnt21]
-        # Numbers_PRE_2 = [cnt28, cnt27, cnt26, cnt25]
-        
-        # # plotting a bar graph
-        # X_axis = np.arange(len(Ranges_2))
-
-        # plt.bar(X_axis - 0.2, Numbers_Inc_2, 0.4, label = 'No. of Inconsistents')
-        # plt.bar(X_axis + 0.2, Numbers_PRE_2, 0.4, label = 'No. of Probable Reporting Errors')
-        # # figure(figsize=(8, 8), dpi=50)
-        # plt.xticks(X_axis, Ranges_2)
-        # plt.xlabel("Range of Errors")
-        # plt.ylabel("Number of Indicators")
-        # plt.legend()
-        # plt.title('Indicator Wise Error Summary')
-
-        # import tempfile
-        # with tempfile.NamedTemporaryFile() as temp_2:
-        #     plt.savefig(temp_2.name + ".png", dpi = 80)
-        #     img_2 = openpyxl.drawing.image.Image(temp_2.name + '.png')
-        #     img_2.anchor='H11'
-        #     sheet_1.add_image(img_2)
-        #     temp_2.close()
-
-        ## Bordering Validation checkwise summary Sheet
-        for i in range(2, len(dataframeForSheet4)+3):
-            sheet_1.cell(row=i, column=2).border = thick_border
-            sheet_1.cell(row=i, column=3).border = thick_border
-            sheet_1.cell(row=i, column=4).border = thick_border
-            sheet_1.cell(row=i, column=5).border = thick_border
-        
-        workbook.save(filename=filename)
-
-
-        # Checks Sheet (Inconsistent)
-        # =======================================
-        sheet_4['A1'] = "Facility-wise inconsistencies"
-        sheet_4.oddHeader.center.size = 18
-        sheet_4.oddHeader.center.font = "Tahoma,Bold"
-        sheet_4.oddHeader.center.color = "CC3366"
-        sheet_4['A1'].font = Font(size = 18, bold = True, color="003679")
-
-        sheet_4.sheet_view.showGridLines = True
-        for i in range(len(FList3)):
-
-            for j in range(len(FList3[i])):
-                sheet_4.cell(row=j+4,column=i+2).value = FList3[i][j]
-
-            # Colors
-            for k in range(1, len(FList3[i])+5):
-                sheet_4.cell(row=4, column=i+1).alignment = Alignment(horizontal='center')
-
-        sheet_4['A2'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-        sheet_4['A3'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-        sheet_4['A4'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-        sheet_4['A2'].font = Font(color = "FFFFFF")
-        sheet_4['A3'].font = Font(color = "FFFFFF")
-        sheet_4['A4'].font = Font(color = "FFFFFF")
-        # set the width of the row
-        sheet_4.column_dimensions['A'].width = 36
-        sheet_4.row_dimensions[2].height = 20
-        sheet_4.row_dimensions[3].height = 20
-        sheet_4.row_dimensions[4].height = 20
-
-        # ## Bordering Checks Giving Inconsistent Sheet
-        # for i in range(1, len(dataframeForSheet6)+50):
-        #     sheet_4.cell(row=1, column=i).border = thick_border
-        #     sheet_4.cell(row=2, column=i).border = thick_border
-        #     sheet_4.cell(row=1, column=i).border = thick_border
-
-        workbook.save(filename=filename)
-
-
-        # Checks Sheet (PRE)
-        # =======================================
-        workbook.active = sheet_5
-
-        sheet_5['A1'] = "Facility-wise PRE"
-        sheet_5.oddHeader.center.size = 18
-        sheet_5.oddHeader.center.font = "Tahoma,Bold"
-        sheet_5.oddHeader.center.color = "CC3366"
-        sheet_5['A1'].font = Font(size = 18, bold = True, color="003679")
-
-        sheet_5.sheet_view.showGridLines = True
-        for i in range(dataframeForSheet7.shape[0]):
-            for j in range(len(FList4_copy[i])):
-                sheet_5.cell(row=j+4,column=i+2).value = FList4_copy[i][j]
-
-            # Colors
-            for k in range(1, len(FList4[i])+5):
-                sheet_5.cell(row=4, column=i+1).alignment = Alignment(horizontal='center')
-
-        sheet_5['A2'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-        sheet_5['A3'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-        sheet_5['A4'].fill = PatternFill(fgColor="003679", fill_type = "solid")
-        sheet_5['A2'].font = Font(color = "FFFFFF")
-        sheet_5['A3'].font = Font(color = "FFFFFF")
-        sheet_5['A4'].font = Font(color = "FFFFFF")
-        sheet_5.column_dimensions['A'].width = 25
-        sheet_5.row_dimensions[2].height = 20
-        sheet_5.row_dimensions[3].height = 20
-        sheet_5.row_dimensions[4].height = 20 
-
-        workbook.save(filename=filename)
-
-        
-        workbook.save(filename = filename)
-
-
-        workbook.active = sheet_0
-
         ## Bordering Description Sheet
         for i in range(4, 12):
             sheet_0.cell(row=i+1, column=2).border = thick_border
@@ -3470,15 +3366,6 @@ class Ui_TabWidget(QWidget):
         for i in range(16, 20):
             sheet_0.cell(row=i+1, column=2).border = thick_border
             sheet_0.cell(row=i+1, column=3).border = thick_border
-
-
-        ## Bordering Validation checkwise summary Sheet
-        for i in range(2, len(dataframeForSheet4)+3):
-            sheet_1.cell(row=i, column=2).border = thick_border
-            sheet_1.cell(row=i, column=3).border = thick_border
-            sheet_1.cell(row=i, column=4).border = thick_border
-            sheet_1.cell(row=i, column=5).border = thick_border
-
 
         sheet_0.sheet_view.showGridLines = False
         sheet_0.merge_cells('A1:B2')
@@ -3497,7 +3384,7 @@ class Ui_TabWidget(QWidget):
         sheet_0['A4'] = "Month, Year: "
 
         sheet_0['B3'] = self.lineEdit_2.text()
-        sheet_0['B4'] = self.lineEdit_3.text()
+        sheet_0['B4'] = items_date
 
         sheet_0.row_dimensions[3].height = 25
         sheet_0.row_dimensions[4].height = 15
@@ -3512,26 +3399,26 @@ class Ui_TabWidget(QWidget):
         sheet_0['B6'] = "Description"
         sheet_0['B7'] = "Facility-level summary"
         sheet_0['B8'] = "Facility-wise inconsistencies"
-        sheet_0['B9'] = "Facility-wise PRE"
+        sheet_0['B9'] = "Facility-wise Inconsistencies due to blank"
         sheet_0['B10'] = "Validation rule wise summary"
         sheet_0['B11'] = "Inconsistency-wise facilities"
-        sheet_0['B12'] = "PRE-wise facilities"
+        sheet_0['B12'] = "Inconsitency due to blank-wise facilities"
 
         sheet_0['B16'] = "Validation Check Outcome Definition : "
         sheet_0['B17'] = "Consistent"
         sheet_0['B18'] = "Inconsistent"
-        sheet_0['B19'] = "Probable reporting error"
+        sheet_0['B19'] = "Inconsistent due to blank"
         sheet_0['B20'] = "Blank"
 
         sheet_0['C4'] = ""
         sheet_0['C5'] = "Details"
         sheet_0['C6'] = "Description of sheets, important terminologies and other explanations"
-        sheet_0['C7'] = "This sheet gives the counts of errors corresponding to each facility name. The colour coding is done as per the buckets, considering the percentage of the number of inconsistent/PRE out of the total validation checks in that facility type for each facility name. This is also shown graphically below the bucketing table. Clicking on the figures of the original table, the user will be directed to the “Checks giving inconsistent” or “Checks giving PRE” tabs, showing the validation checks for which, the errors creeped in."
+        sheet_0['C7'] = "This sheet gives the counts of errors corresponding to each facility name. The colour coding is done as per the buckets, considering the percentage of the number of inconsistent/inconsistent due to balnk out of the total validation checks in that facility type for each facility name. This is also shown graphically below the bucketing table. Clicking on the figures of the original table, the user will be directed to the “Checks giving inconsistent” or “Checks giving inconsistent due to blank” tabs, showing the validation checks for which, the errors creeped in."
         sheet_0['C8'] = "This sheet provides the list of the checks giving Inconsistencies within the dataset with the count and the description."
         sheet_0['C9'] = "This sheet provides the list of the facilities giving Inconsistencies within the dataset with the count and the condition and the description of the condition."
-        sheet_0['C10'] = "This sheet provides the list of the facilities giving probable reporting error within the dataset with the count and the condition and the description of the condition."
-        sheet_0['C11'] = "This sheet provides the list of the checks giving Probable Reporting Error within the dataset with the count and the description"
-        sheet_0['C12'] = "This sheet gives us the count of the facilities giving inconsistent and probable reporting error within the datasets. The colour coding is done as per the buckets, which were created considering the percentage of the number of facility names out of all the facilities who have reported inconsistent/PRE. This is also shown graphically below the bucketing table. Clicking on the figures of the original table, the user will be directed to the “Facility with inconsistent” or “Facility with PRE” tabs, showing the facilities for which, the errors creeped in."
+        sheet_0['C10'] = "This sheet provides the list of the facilities giving Inconsistencies due to blank within the dataset with the count and the condition and the description of the condition."
+        sheet_0['C11'] = "This sheet provides the list of the checks giving Inconsistencies due to blank within the dataset with the count and the description"
+        sheet_0['C12'] = "This sheet gives us the count of the facilities giving inconsistent and Inconsistencies due to blank within the datasets. The colour coding is done as per the buckets, which were created considering the percentage of the number of facility names out of all the facilities who have reported inconsistent/inconsistent due to blank. This is also shown graphically below the bucketing table. Clicking on the figures of the original table, the user will be directed to the “Facility with inconsistent” or “Facility with inconsistent due to blank” tabs, showing the facilities for which, the errors creeped in."
         
         sheet_0['C16'] = ""
         sheet_0['C17'] = "The validation check holds true and needs no scrutiny."
@@ -3662,13 +3549,13 @@ class Ui_TabWidget(QWidget):
         sheet_0['D31'].font = Font(color="00000000", bold = False)
         sheet_0['D31'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['D32'] = 'Probable Reporting Error'
+        sheet_0['D32'] = 'Inconsistent due to blank'
         sheet_0['D32'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
         sheet_0['D32'].fill = PatternFill("solid", fgColor="00C0C0C0")
         sheet_0['D32'].font = Font(color="00000000", bold = False)
         sheet_0['D32'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['D33'] = 'Inconsistent'
+        sheet_0['D33'] = 'Inconsistent due to blank'
         sheet_0['D33'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
         sheet_0['D33'].fill = PatternFill("solid", fgColor="00FFFFFF")
         sheet_0['D33'].font = Font(color="00000000", bold = False)
@@ -3688,158 +3575,843 @@ class Ui_TabWidget(QWidget):
         sheet_0.row_dimensions[34].height = 15
 
 
-        #Second
-        sheet_0['B37'] = "Recurring data items [service for one data items may be provided over months]:  Considering permissible limit of +-50% i.e., if the disparity in the two data items is more than the limit then it is a probable reporting error."
-        sheet_0['B37'].font = Font(size = 12, bold = True)
+        # #Second
+        # sheet_0['B37'] = "Recurring data items [service for one data items may be provided over months]:  Considering permissible limit of +-50% i.e., if the disparity in the two data items is more than the limit then it is a probable reporting error."
+        # sheet_0['B37'].font = Font(size = 12, bold = True)
         
-        sheet_0.merge_cells('B38:B42')  
+        # sheet_0.merge_cells('B38:B42')  
   
-        cell_B37 = sheet_0.cell(row= 38, column= 2)  
-        cell_B37.value = '1.2.4 Number of PW given 180 Iron Folic Acid (IFA) tablets'  
-        cell_B37.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0) 
-        cell_B37.fill = PatternFill("solid", fgColor="00003366")
-        cell_B37.font = Font(color="00FFFFFF")
+        # cell_B37 = sheet_0.cell(row= 38, column= 2)  
+        # cell_B37.value = '1.2.4 Number of PW given 180 Iron Folic Acid (IFA) tablets'  
+        # cell_B37.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0) 
+        # cell_B37.fill = PatternFill("solid", fgColor="00003366")
+        # cell_B37.font = Font(color="00FFFFFF")
 
-        sheet_0.merge_cells('C38:C42')  
+        # sheet_0.merge_cells('C38:C42')  
   
-        cell_C50 = sheet_0.cell(row= 38, column= 3)  
-        cell_C50.value = '1.1 Total number of pregnant women registered for ANC'  
-        cell_C50.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0) 
-        cell_C50.fill = PatternFill("solid", fgColor="00003366")
-        cell_C50.font = Font(color="00FFFFFF")
+        # cell_C50 = sheet_0.cell(row= 38, column= 3)  
+        # cell_C50.value = '1.1 Total number of pregnant women registered for ANC'  
+        # cell_C50.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0) 
+        # cell_C50.fill = PatternFill("solid", fgColor="00003366")
+        # cell_C50.font = Font(color="00FFFFFF")
 
-        sheet_0.merge_cells('D38:D42')  
+        # sheet_0.merge_cells('D38:D42')  
   
-        cell_D50 = sheet_0.cell(row= 38, column= 4)  
-        cell_D50.value = 'Outcome (for 1.2.4 <= 1.1)'  
-        cell_D50.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0) 
-        cell_D50.fill = PatternFill("solid", fgColor="00003366")
-        cell_D50.font = Font(color="00FFFFFF")
+        # cell_D50 = sheet_0.cell(row= 38, column= 4)  
+        # cell_D50.value = 'Outcome (for 1.2.4 <= 1.1)'  
+        # cell_D50.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0) 
+        # cell_D50.fill = PatternFill("solid", fgColor="00003366")
+        # cell_D50.font = Font(color="00FFFFFF")
 
-        sheet_0['B37'].fill = PatternFill("solid", fgColor="FFFF00")
+        # sheet_0['B37'].fill = PatternFill("solid", fgColor="FFFF00")
 
-        sheet_0['B43'] = 'Value'
-        sheet_0['B43'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['B43'].fill = PatternFill("solid", fgColor="00C0C0C0")
-        sheet_0['B43'].font = Font(color="00000000")
-        sheet_0['B43'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['B43'] = 'Value'
+        # sheet_0['B43'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['B43'].fill = PatternFill("solid", fgColor="00C0C0C0")
+        # sheet_0['B43'].font = Font(color="00000000")
+        # sheet_0['B43'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['B44'] = 'Value'
-        sheet_0['B44'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['B44'].fill = PatternFill("solid", fgColor="00FFFFFF")
-        sheet_0['B44'].font = Font(color="00000000")
-        sheet_0['B44'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['B44'] = 'Value'
+        # sheet_0['B44'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['B44'].fill = PatternFill("solid", fgColor="00FFFFFF")
+        # sheet_0['B44'].font = Font(color="00000000")
+        # sheet_0['B44'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['B45'] = 'Null'
-        sheet_0['B45'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['B45'].fill = PatternFill("solid", fgColor="00C0C0C0")
-        sheet_0['B45'].font = Font(color="00000000")
-        sheet_0['B45'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['B45'] = 'Null'
+        # sheet_0['B45'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['B45'].fill = PatternFill("solid", fgColor="00C0C0C0")
+        # sheet_0['B45'].font = Font(color="00000000")
+        # sheet_0['B45'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['B46'] = 'Value'
-        sheet_0['B46'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['B46'].fill = PatternFill("solid", fgColor="00FFFFFF")
-        sheet_0['B46'].font = Font(color="00000000")
-        sheet_0['B46'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['B46'] = 'Value'
+        # sheet_0['B46'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['B46'].fill = PatternFill("solid", fgColor="00FFFFFF")
+        # sheet_0['B46'].font = Font(color="00000000")
+        # sheet_0['B46'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['B47'] = 'Blank'
-        sheet_0['B47'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['B47'].fill = PatternFill("solid", fgColor="00C0C0C0")
-        sheet_0['B47'].font = Font(color="00000000")
-        sheet_0['B47'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['B47'] = 'Blank'
+        # sheet_0['B47'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['B47'].fill = PatternFill("solid", fgColor="00C0C0C0")
+        # sheet_0['B47'].font = Font(color="00000000")
+        # sheet_0['B47'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['C43'] = 'Value'
-        sheet_0['C43'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['C43'].fill = PatternFill("solid", fgColor="00C0C0C0")
-        sheet_0['C43'].font = Font(color="00000000", bold = False)
-        sheet_0['C43'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['C43'] = 'Value'
+        # sheet_0['C43'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['C43'].fill = PatternFill("solid", fgColor="00C0C0C0")
+        # sheet_0['C43'].font = Font(color="00000000", bold = False)
+        # sheet_0['C43'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['C44'] = 'Value'
-        sheet_0['C44'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['C44'].fill = PatternFill("solid", fgColor="00FFFFFF")
-        sheet_0['C44'].font = Font(color="00000000", bold = False)
-        sheet_0['C44'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['C44'] = 'Value'
+        # sheet_0['C44'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['C44'].fill = PatternFill("solid", fgColor="00FFFFFF")
+        # sheet_0['C44'].font = Font(color="00000000", bold = False)
+        # sheet_0['C44'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['C45'] = 'Value'
-        sheet_0['C45'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['C45'].fill = PatternFill("solid", fgColor="00C0C0C0")
-        sheet_0['C45'].font = Font(color="00000000", bold = False)
-        sheet_0['C45'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['C45'] = 'Value'
+        # sheet_0['C45'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['C45'].fill = PatternFill("solid", fgColor="00C0C0C0")
+        # sheet_0['C45'].font = Font(color="00000000", bold = False)
+        # sheet_0['C45'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['C46'] = 'Null'
-        sheet_0['C46'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['C46'].fill = PatternFill("solid", fgColor="00FFFFFF")
-        sheet_0['C46'].font = Font(color="00000000", bold = False)
-        sheet_0['C46'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['C46'] = 'Null'
+        # sheet_0['C46'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['C46'].fill = PatternFill("solid", fgColor="00FFFFFF")
+        # sheet_0['C46'].font = Font(color="00000000", bold = False)
+        # sheet_0['C46'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['C47'] = 'Blank'
-        sheet_0['C47'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['C47'].fill = PatternFill("solid", fgColor="00C0C0C0")
-        sheet_0['C47'].font = Font(color="00000000", bold = False)
-        sheet_0['C47'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['C47'] = 'Blank'
+        # sheet_0['C47'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['C47'].fill = PatternFill("solid", fgColor="00C0C0C0")
+        # sheet_0['C47'].font = Font(color="00000000", bold = False)
+        # sheet_0['C47'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['D43'] = 'Consistent [Probable Reporting Error (if LHS is less than 50% of RHS)]'
-        sheet_0['D43'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['D43'].fill = PatternFill("solid", fgColor="00C0C0C0")
-        sheet_0['D43'].font = Font(color="00000000", bold = False)
-        sheet_0['D43'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['D43'] = 'Consistent [Probable Reporting Error (if LHS is less than 50% of RHS)]'
+        # sheet_0['D43'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['D43'].fill = PatternFill("solid", fgColor="00C0C0C0")
+        # sheet_0['D43'].font = Font(color="00000000", bold = False)
+        # sheet_0['D43'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['D44'] = 'Inconsistent (when condition fails) [Probable Reporting Error (is LHS is more than 50% of RHS)]'
-        sheet_0['D44'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['D44'].fill = PatternFill("solid", fgColor="00FFFFFF")
-        sheet_0['D44'].font = Font(color="00000000", bold = False)
-        sheet_0['D44'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['D44'] = 'Inconsistent (when condition fails) [Probable Reporting Error (is LHS is more than 50% of RHS)]'
+        # sheet_0['D44'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['D44'].fill = PatternFill("solid", fgColor="00FFFFFF")
+        # sheet_0['D44'].font = Font(color="00000000", bold = False)
+        # sheet_0['D44'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['D45'] = 'Probable Reporting Error'
-        sheet_0['D45'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['D45'].fill = PatternFill("solid", fgColor="00C0C0C0")
-        sheet_0['D45'].font = Font(color="00000000", bold = False)
-        sheet_0['D45'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['D45'] = 'Probable Reporting Error'
+        # sheet_0['D45'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['D45'].fill = PatternFill("solid", fgColor="00C0C0C0")
+        # sheet_0['D45'].font = Font(color="00000000", bold = False)
+        # sheet_0['D45'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['D46'] = 'Probable Reporting Error'
-        sheet_0['D46'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['D46'].fill = PatternFill("solid", fgColor="00FFFFFF")
-        sheet_0['D46'].font = Font(color="00000000", bold = False)
-        sheet_0['D46'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['D46'] = 'Probable Reporting Error'
+        # sheet_0['D46'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['D46'].fill = PatternFill("solid", fgColor="00FFFFFF")
+        # sheet_0['D46'].font = Font(color="00000000", bold = False)
+        # sheet_0['D46'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0['D47'] = 'Blank'
-        sheet_0['D47'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
-        sheet_0['D47'].fill = PatternFill("solid", fgColor="00C0C0C0")
-        sheet_0['D47'].font = Font(color="00000000", bold = False)
-        sheet_0['D47'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
+        # sheet_0['D47'] = 'Blank'
+        # sheet_0['D47'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, indent=0)
+        # sheet_0['D47'].fill = PatternFill("solid", fgColor="00C0C0C0")
+        # sheet_0['D47'].font = Font(color="00000000", bold = False)
+        # sheet_0['D47'].border = Border(top = Side(style='thin'), left= Side(style='thin'), right= Side(style='thin'), bottom= Side(style='thin'))
 
-        sheet_0.row_dimensions[43].height = 15
-        sheet_0.row_dimensions[44].height = 15
-        sheet_0.row_dimensions[45].height = 15
-        sheet_0.row_dimensions[46].height = 15
-        sheet_0.row_dimensions[47].height = 15
+        # sheet_0.row_dimensions[43].height = 15
+        # sheet_0.row_dimensions[44].height = 15
+        # sheet_0.row_dimensions[45].height = 15
+        # sheet_0.row_dimensions[46].height = 15
+        # sheet_0.row_dimensions[47].height = 15
 
-        ## WRAPPING TEXT IN DESCRIPTION SHEET
-        for rows in sheet_0.iter_rows():
-            for cell in rows:
-                cell.alignment = Alignment(wrapText=True)
-        
+        # ## WRAPPING TEXT IN DESCRIPTION SHEET
+        # for rows in sheet_0.iter_rows():
+        #     for cell in rows:
+        #         cell.alignment = Alignment(wrapText=True)
 
-        # delete useless columns of Facility Level Summary
-        sheet.delete_cols(8, 2)
-
-        # delete useless columns of sheet_1
-        sheet_1.delete_cols(6, 2)
         workbook.save(filename=filename)
 
+        '''
+        **************************************************************************************************
+        '''
+
+        '''
+        *********************************** sheet :: Facility Level Summary ***********************************
+        '''
+
+        ''' THE CODE FOR GENERATING HYPERLINKS '''
+        # Function to generate sequences according to the excel sheet
+        def excel_cols_link3():
+            n1 = 1
+            while True:
+                yield from (''.join(group) for group in itertools.product(string.ascii_uppercase, repeat=n1))
+                n1 += 1
+
+        # Function to generate sequences according to the excel sheet
+        def excel_cols_link4():
+            n2 = 1
+            while True:
+                yield from (''.join(group) for group in itertools.product(string.ascii_uppercase, repeat=n2))
+                n2 += 1
+
+        ## Formatting Sheet{Facility Level Summary}
+        try:
+            sheet.move_range("A1:J10000", rows=1)
+        except:
+            sheet.move_range("A1:J25000", rows=1)
+            try:
+                sheet.move_range("A1:J50000", rows=1)
+            except:
+                sheet.move_range("A1:J100000", rows=1)
+            finally:
+                sheet.move_range("A1:J1048576", rows=1)
 
 
-        # self.popup.close()
+        ## ADDING HEADER IN Facility Level Summary
+        sheet.oddHeader.center.text = "Facility Level Summary"
+        sheet.oddHeader.center.size = 14
+        sheet.oddHeader.center.font = "Tahoma,Bold"
+        sheet.oddHeader.center.color = "CC3366"
+        sheet.cell(row=1, column=4).value = 'Facility Level Summary'
+        sheet.cell(row=2, column=1).value = 'Sr. No'
+        sheet.cell(row=2, column=2).value = 'Date'
+        sheet.cell(row=2, column=5).value = 'Facility Name'
+        sheet['D1'].font = Font(size = 18, bold = True, color="003679") 
+
+        ## EXPANDING ROWS OF SHEET (FACILITY LEVEL SUMMARY)
+        sheet.column_dimensions['D'].width = 20
+        sheet.column_dimensions['E'].width = 15
+        sheet.column_dimensions['F'].width = 25
+
+       
+        '''
+        !------------------------------------------------------------------
+        #####! ADDING THE COLOR CODES TO THE SHEET (FACILITY LEVEL SUMMARY)
+        !------------------------------------------------------------------
+        '''
+    
+        cnt1, cnt2, cnt3, cnt4, cnt5 = 0, 0, 0, 0, 0
+        for i in range(len(FList3)):
+
+            ### Deleting unwanted rows
+            if sheet.cell(row=i+3, column=9).value == None:
+                sheet.delete_rows(i+3, 1)
+            elif sheet.cell(row=i+3, column=9).value >= 50:
+                cnt1 += 1
+            elif sheet.cell(row=i+3, column=9).value < 50 and sheet.cell(row=i+3, column=9).value >= 25:
+                cnt2 += 1
+            elif sheet.cell(row=i+3, column=9).value < 25 and sheet.cell(row=i+3, column=9).value >= 10:
+                cnt3 += 1
+            elif sheet.cell(row=i+3, column=9).value < 10 and sheet.cell(row=i+3, column=9).value >= 5:
+                cnt4 += 1
+            elif sheet.cell(row=i+3, column=9).value < 5:
+                cnt5 += 1
+
+            for j in range(len(FList3[i])):
+                '''
+                # Create hyperlink to relevant cell
+                '''
+                link1 = "#'Facility-wise Inconsistencies'!B2"
+
+                l1 = list(itertools.islice(excel_cols_link3(), len(FList3)+1))
+
+                #update link
+                link1 = link1.replace("B", l1[i+1])
+
+                sheet.cell(row=i+3, column=6).hyperlink = link1
+                sheet.cell(row=i+3, column=6).style = "Hyperlink"
+
+                if sheet.cell(row=i+3, column=9).value >= 50:
+                    sheet.cell(row=i+3, column=6).fill = PatternFill(fgColor='EF5350', fill_type = "solid") 
+                elif sheet.cell(row=i+3, column=9).value < 50 and sheet.cell(row=i+3, column=9).value >= 25:
+                    sheet.cell(row=i+3, column=6).fill = PatternFill(fgColor='FFAF00', fill_type = "solid")
+                elif sheet.cell(row=i+3, column=9).value < 25 and sheet.cell(row=i+3, column=9).value >= 10:
+                    sheet.cell(row=i+3, column=6).fill = PatternFill(fgColor='C0C000', fill_type = "solid")
+                elif sheet.cell(row=i+3, column=9).value < 10 and sheet.cell(row=i+3, column=9).value >= 5:
+                    sheet.cell(row=i+3, column=6).fill = PatternFill(fgColor='00FF00', fill_type = "solid")
+                elif sheet.cell(row=i+3, column=9).value < 5:
+                    sheet.cell(row=i+3, column=6).fill = PatternFill(fgColor='00AF5F', fill_type = "solid")
+
+
+        link2 = "#'Facility-wise Inc due to blank'!B2"
+        l2 = list(itertools.islice(excel_cols_link4(), dataframeForSheet7.shape[0]+1))
+
+        # for i in range(len(FList4)):
+        k = 0
+        for i in range(len(FList4)):
+            if sheet.cell(row=i+3, column=7).value == 0:
+                k = k + 1 
+            if sheet.cell(row=i+3, column=7).value != 0 and sheet.cell(row=i+2, column=7).value == 0:
+                if k == 1:
+                    link2 = "#'Facility-wise Inc due to blank'!"+ l2[i] +"2"
+                    print('i=', i, "cell=", sheet.cell(row=i+3, column=7), "Value=", sheet.cell(row=i+3, column=7).value, 'link=', link2)
+                elif k > 1:
+                    link2 = "#'Facility-wise Inc due to blank'!"+ l2[i+1-k] +"2"
+                    print('i=', i, "cell=", sheet.cell(row=i+3, column=7), "Value=", sheet.cell(row=i+3, column=7).value, 'link=', link2)
+
+            elif sheet.cell(row=i+3, column=6).value != 0 and sheet.cell(row=i+2, column=7).value != 0:
+                link2 = "#'Facility-wise Inc due to blank'!"+ l2[i+1-k] +"2"   
+                print('i=', i, "celltype2=", sheet.cell(row=i+3, column=7), "Value=", sheet.cell(row=i+3, column=7).value, 'link=', link2)
+            else:
+                link2=None
+
+            sheet.cell(row=i+3, column=7).hyperlink = link2
+            sheet.cell(row=i+3, column=7).style = "Hyperlink"
+
+
+
+        cnt6, cnt7, cnt8, cnt9, cnt10 = 0, 0, 0, 0, 0
+        for i in range(len(FList4)):
+            if sheet.cell(row=i+3, column=10).value == None:
+                sheet.delete_rows(i+3, 1)
+            elif sheet.cell(row=i+3, column=10).value >= 50:
+                cnt6 += 1
+                sheet.cell(row=i+3, column=7).fill = PatternFill(fgColor='EF5350', fill_type = "solid")
+            elif sheet.cell(row=i+3, column=10).value < 50 and sheet.cell(row=i+3, column=10).value >= 25:
+                cnt7 += 1
+                sheet.cell(row=i+3, column=7).fill = PatternFill(fgColor='FFAF00', fill_type = "solid")
+            elif sheet.cell(row=i+3, column=10).value < 25 and sheet.cell(row=i+3, column=10).value >= 10:
+                cnt8 += 1
+                sheet.cell(row=i+3, column=7).fill = PatternFill(fgColor='C0C000', fill_type = "solid")
+            elif sheet.cell(row=i+3, column=10).value < 10 and sheet.cell(row=i+3, column=10).value >= 5:
+                cnt9 += 1
+                sheet.cell(row=i+3, column=7).fill = PatternFill(fgColor='00FF00', fill_type = "solid")
+            elif sheet.cell(row=i+3, column=10).value < 5:
+                cnt10 += 1
+                sheet.cell(row=i+3, column=7).fill = PatternFill(fgColor='00AF5F', fill_type = "solid")
+                    
+
+        
+
+        ## Bordering Facility Level summary Sheet
+        for i in range(2, len(dataframeForSheet6)+3):
+            sheet.cell(row=i, column=2).border = thick_border
+            sheet.cell(row=i, column=3).border = thick_border
+            sheet.cell(row=i, column=4).border = thick_border
+            sheet.cell(row=i, column=5).border = thick_border
+            sheet.cell(row=i, column=6).border = thick_border
+            sheet.cell(row=i, column=7).border = thick_border
+            sheet.cell(row=i, column=8).border = thick_border
+
+
+        # Coloring and palettes of Facility Guidance Sheet
+        sheet['L32'] = 'Color Brackets'
+        sheet['L33'].fill = PatternFill(fgColor="EF5350", fill_type = "solid")
+        sheet['L34'].fill = PatternFill(fgColor="FFAF00", fill_type = "solid")
+        sheet['L35'].fill = PatternFill(fgColor="C0C000", fill_type = "solid")
+        sheet['L36'].fill = PatternFill(fgColor="00FF00", fill_type = "solid")
+        sheet['L37'].fill = PatternFill(fgColor="00AF5F", fill_type = "solid")
+
+        sheet["M32"] = "Range"
+        sheet["M33"] = ">= 50%"
+        sheet["M34"] = "25 - 50%"
+        sheet["M35"] = "10 - 25%"
+        sheet["M36"] = "5 - 10%"
+        sheet["M37"] = "< 5%"
+        sheet["M38"] = "Total Facilities"
+
+        sheet["N32"] = "Inconsistent"
+        sheet["N33"] = cnt1
+        sheet["N34"] = cnt2
+        sheet["N35"] = cnt3
+        sheet["N36"] = cnt4
+        sheet["N37"] = cnt5
+        sheet["N38"] = cnt1 + cnt2 + cnt3 + cnt4 + cnt5
+
+        sheet["O32"] = "Inconsistent due to blank"
+        sheet["O33"] = cnt6
+        sheet["O34"] = cnt7
+        sheet["O35"] = cnt8
+        sheet["O36"] = cnt9
+        sheet["O37"] = cnt10
+        sheet["O38"] = cnt6 + cnt7 + cnt8 + cnt9 + cnt10
+
+
+        ''' 
+        GRAPH PLOTS
+        '''
+        
+        Ranges = list(count_df_Test_Plot_Inc_State.keys())
+        # Ranges = list(count_df_Test_Plot_INCBlnk_State.keys())
+        Numbers_Inc = list(count_df_Test_Plot_Inc_State.values())
+        Numbers_INCBlnk = list(count_df_Test_Plot_INCBlnk_State.values())
+
+
+        #########################!-----------------------------------#############################!
+        #########################!              PLOTS                #############################!
+        #########################!-----------------------------------#############################!
+        # TEST PLOT OF PIE CHART
+        figure, axis = plt.subplots(2, 2)
+        fig = plt.figure(figsize= (26, 8))
+        rows = 2
+        columns = 3
+
+
+        #! 1 ....................................................................................
+        fig.add_subplot(rows, columns, 1)
+        X_axis = np.arange(len(Ranges))
+        plt.bar(X_axis - 0.2, Numbers_Inc, 0.4, label = 'Number of Inconsistents')
+        plt.bar(X_axis + 0.2, Numbers_INCBlnk, 0.4, label = 'Number of Inconsistent due to blank')
+        #figure(figsize=(8, 8), dpi=50)
+        plt.xticks(X_axis, Ranges)
+        plt.xlabel("States")
+        plt.ylabel("Number of Inconsistents and Inconsistent due to blank")
+        plt.legend()
+        plt.title('State Wise Error Summary')
+        # set the spacing between subplots
+        plt.subplots_adjust(left=0.1,
+                            bottom=0.1, 
+                            right=0.9, 
+                            top=0.9, 
+                            wspace=0.4, 
+                            hspace=0.4)
+
+
+        #! 2 ....................................................................................
+        n = 2
+        
+        ###! GROUP BY STATE FOR 5 TOP NON-PERFORMER STATES  ---- & THEN 
+        ###! GROUP BY DISTRICT FOR 5 TOP NON-PERFORMER DISTRICTS
+        for _, g in final_result_summ2_For_SubPlots.groupby(['State']): 
+
+            top_5_dist_INC = g.groupby(['District'])['Inconsistent'].sum().nlargest(5)
+            top_5_dist_INCBlnk = g.groupby(['District'])['Inconsistent due to blank'].sum().nlargest(5)
+
+            dist_dictionary_INC = top_5_dist_INC.to_dict()
+            dist_dictionary_INCBlnk = top_5_dist_INCBlnk.to_dict()
+
+            Ranges = list(dist_dictionary_INC.keys())
+            Numbers_Inc = list(dist_dictionary_INC.values())
+            Numbers_INCBlnk = list(dist_dictionary_INCBlnk.values())
+
+
+            rows = 2
+            columns = 3
+
+            fig.add_subplot(rows, columns, n)
+            
+            X_axis = np.arange(len(Ranges))
+            plt.bar(X_axis - 0.2, Numbers_INCBlnk, 0.4, label = 'Number of Inconsistent due to blank')
+            plt.bar(X_axis - 0.2, Numbers_Inc, 0.4, label = 'Number of Inconsistents')
+
+            #figure(figsize=(8, 8), dpi=50)
+            plt.xticks(X_axis, Ranges)
+            plt.xlabel(_)
+            plt.ylabel("Number of Inconsistents and INCBlnk")
+            plt.legend()
+            plt.title('Top 5 non performing Districts')
+            # set the spacing between subplots
+            plt.subplots_adjust(left=0.1,
+                                bottom=0.1, 
+                                right=0.9, 
+                                top=0.9, 
+                                wspace=0.4, 
+                                hspace=0.4)
+   
+
+            print('*********************** ' + str(n) + ' ######################################## ')
+
+            n += 1
+
+            if n > 6:
+                break
+
+
+        # import tempfile
+        # with tempfile.NamedTemporaryFile() as temp_2:
+        #     plt.savefig(temp_2.name + ".png", dpi = 80)
+        #     img_2 = openpyxl.drawing.image.Image(temp_2.name + '.png')
+        #     img_2.anchor='Q25'
+        #     sheet.add_image(img_2)
+        #     temp_2.close()
+
+        # # plotting a bar graph
+        # fig.add_subplot(rows, columns, 3)
+        # X_axis = np.arange(len(Ranges))
+        # plt.bar(X_axis - 0.2, Numbers_Inc, 0.4, label = 'Number of Inconsistents')
+        # plt.bar(X_axis + 0.2, Numbers_INCBlnk, 0.4, label = 'Number of Probable Reporting Errors')
+        # #figure(figsize=(8, 8), dpi=50)
+        # plt.xticks(X_axis, Ranges)
+        # plt.xlabel("Range of Errors")
+        # plt.ylabel("Number of Facilities")
+        # plt.legend()
+        # plt.title('Facility Wise Error Summary')
+
+
+        # fig.add_subplot(rows, columns, 4)
+        # plt.pie(df_Test_Plot_INCBlnk['Probable Reporting Error'].tolist()[:5], labels=df_Test_Plot_INCBlnk.index[:5], autopct='%1.2f%%')
+        # plt.title('Top 5 districts giving Probable Reporting Error (INCBlnk)')
+
+
+        # # for i in range(2):
+        # fig.add_subplot(rows, columns, 5)
+        # plt.pie(df_Test_Plot_State['Inconsistent'], labels=df_Test_Plot_State.index, autopct='%1.2f%%')
+        # plt.title('States giving Inconsistent')
+
+        import tempfile
+        with tempfile.NamedTemporaryFile() as temp:
+            plt.savefig(temp.name + ".png", dpi = 80)
+            img = openpyxl.drawing.image.Image(temp.name + '.png')
+            img.anchor='J1'
+            sheet.add_image(img)
+            temp.close()
+
+        # ### delete useless columns of Facility Level Summary
+        sheet.delete_cols(9, 2)
+
+        sheet.column_dimensions['F'].width = 30
+        sheet.column_dimensions['G'].width = 30
+
+        workbook.save(filename=filename)
+
+        '''
+        **************************************************************************************************
+        '''
+
+        '''
+        *********************************** sheet_4 :: Facility-wise Inconsistencies ***********************************
+        '''
+
+        # Checks Sheet (Inconsistent)
+        # =======================================
+        workbook.active = sheet_4
+        sheet_4['A1'] = "Facility-wise inconsistencies"
+        sheet_4.oddHeader.center.size = 18
+        sheet_4.oddHeader.center.font = "Tahoma,Bold"
+        sheet_4.oddHeader.center.color = "CC3366"
+        sheet_4['A1'].font = Font(size = 18, bold = True, color="003679")
+
+        sheet_4.sheet_view.showGridLines = True
+        for i in range(101):
+            for j in range(len(FList3[i])):
+                sheet_4.cell(row=j+8,column=i+2).value = FList3[i][j]
+
+            # Alignment
+            for k in range(1, len(FList3[i])+5):
+                sheet_4.cell(row=4, column=i+1).alignment = Alignment(horizontal='center')
+
+        sheet_4['A2'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_4['A3'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_4['A4'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_4['A2'].font = Font(color = "FFFFFF")
+        sheet_4['A3'].font = Font(color = "FFFFFF")
+        sheet_4['A4'].font = Font(color = "FFFFFF")
+        # set the width of the row
+        sheet_4.column_dimensions['A'].width = 45
+        sheet_4.row_dimensions[2].height = 20
+        sheet_4.row_dimensions[3].height = 20
+        sheet_4.row_dimensions[4].height = 20
+
+        # ## Bordering Checks Giving Inconsistent Sheet
+        # for i in range(1, len(dataframeForSheet6)+50):
+        #     sheet_4.cell(row=1, column=i).border = thick_border
+        #     sheet_4.cell(row=2, column=i).border = thick_border
+        #     sheet_4.cell(row=1, column=i).border = thick_border
+
+        workbook.save(filename=filename)
+
+        '''
+        **************************************************************************************************
+        '''
+
+        '''
+        *********************************** sheet_5 :: INCBlnk-wise Inconsistencies ***********************************
+        '''
+
+        # Checks Sheet (INCBlnk)
+        # =======================================
+
+        sheet_5['A1'] = "Facility-wise Inconsistencies due to blank"
+        sheet_5.oddHeader.center.size = 18
+        sheet_5.oddHeader.center.font = "Tahoma,Bold"
+        sheet_5.oddHeader.center.color = "CC3366"
+        sheet_5['A1'].font = Font(size = 18, bold = True, color="003679")
+        sheet_5.column_dimensions['A'].width = 55
+
+        sheet_5.sheet_view.showGridLines = True
+        for i in range(101):
+            for j in range(len(FList4_copy[i])):
+                sheet_5.cell(row=j+8,column=i+2).value = FList4_copy[i][j]
+
+            # Alignment
+            for k in range(1, len(FList4[i])+5):
+                sheet_5.cell(row=4, column=i+1).alignment = Alignment(horizontal='center')
+
+        sheet_5['A2'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_5['A3'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_5['A4'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_5['A2'].font = Font(color = "FFFFFF")
+        sheet_5['A3'].font = Font(color = "FFFFFF")
+        sheet_5['A4'].font = Font(color = "FFFFFF")
+        sheet_5.column_dimensions['A'].width = 25
+        sheet_5.row_dimensions[2].height = 20
+        sheet_5.row_dimensions[3].height = 20
+        sheet_5.row_dimensions[4].height = 20 
+
+        workbook.save(filename=filename)
+
+        '''
+        **************************************************************************************************
+        '''
+
+        '''
+        *********************************** sheet_1 :: Validation rule wise summary ***********************************
+        '''
+
+        ### Formatting Sheet_1{Validation Checkwise Summary}
+        try:
+            sheet_1.move_range("A1:G10000", rows=1)
+        except:
+            sheet_1.move_range("A1:G25000", rows=1)
+            try:
+                sheet_1.move_range("A1:G50000", rows=1)
+            except:
+                sheet_1.move_range("A1:G100000", rows=1)
+            finally:
+                sheet_1.move_range("A1:G1048576", rows=1)
+
+
+        sheet_1.oddHeader.center.text = "Validation Rule Wise Summary"
+        sheet_1.cell(row=2, column=1).value = 'Sr. No'
+        sheet_1.oddHeader.center.size = 14
+        sheet_1.oddHeader.center.font = "Tahoma,Bold"
+        sheet_1.oddHeader.center.color = "CC3366"
+        sheet_1.cell(row=1, column=2).value = 'Validation Rule Wise Summary'
+        sheet_1['B1'].font = Font(size = 18, bold = True, color="003679")
+
+        ## EXPANDING ROWS OF SHEET_1 (VALIDATION CHECKWISE SUMMARY)
+        sheet_1.column_dimensions['B'].width = 20
+        sheet_1.column_dimensions['C'].width = 20
+        sheet_1.column_dimensions['D'].width = 15
+        sheet_1.column_dimensions['E'].width = 25
+
+        # HYPERLINKING FUNCTIONS
+        def excel_cols_link1():
+            n1 = 1
+            while True:
+                yield from (''.join(group) for group in itertools.product(string.ascii_uppercase, repeat=n1))
+                n1 += 1
+
+        # HYPERLINKING FUNCTIONS
+        def excel_cols_link2():
+            n2 = 1
+            while True:
+                yield from (''.join(group) for group in itertools.product(string.ascii_uppercase, repeat=n2))
+                n2 += 1
+        
+        cnt21, cnt22, cnt23, cnt24 = 0, 0, 0, 0
+        for i in range(len(FList1)):
+            if sheet_1.cell(row=i+3, column=6).value == None:
+                sheet.delete_rows(i+3, 1)
+            elif sheet_1.cell(row=i+3, column=6).value >= 25:
+                cnt21 += 1
+            elif sheet_1.cell(row=i+3, column=6).value < 25 and sheet_1.cell(row=i+3, column=6).value >= 10:
+                cnt22 += 1
+            elif sheet_1.cell(row=i+3, column=6).value < 10 and sheet_1.cell(row=i+3, column=6).value >= 5:
+                cnt23 += 1
+            elif sheet_1.cell(row=i+3, column=6).value < 5:
+                cnt24 += 1
+
+            for j in range(len(FList1[i])):
+
+                # ### RESPONSIBLE FOR EXPANDING FACILITY NAMES IN THE  (Inconsitency due to blank-wise facilities)
+                ##### FOR SHEET_2 #####
+                sheet_2.cell(row=j+5,column=i+2).value = FList1[i][j]
+
+                '''
+                # Create hyperlink to relevant cell for sheet_1
+                '''
+                link1 = "#'Inconsistency-wise facilities'!B2"
+
+                l1 = list(itertools.islice(excel_cols_link1(), len(FList1)+1))
+                
+                ## update link and then hyperlink it
+                link1 = link1.replace("B", l1[i+1])
+                sheet_1.cell(row=i+3, column=4).hyperlink = link1
+                sheet_1.cell(row=i+3, column=4).style = "Hyperlink"
+
+                if sheet_1.cell(row=i+3, column=6).value >= 25:
+                    sheet_1.cell(row=i+3, column=4).fill = PatternFill(fgColor='EF5350', fill_type = "solid")
+                elif sheet_1.cell(row=i+3, column=6).value < 25 and sheet_1.cell(row=i+3, column=6).value >= 10:
+                    sheet_1.cell(row=i+3, column=4).fill = PatternFill(fgColor='FFAF00', fill_type = "solid")
+                elif sheet_1.cell(row=i+3, column=6).value < 10 and sheet_1.cell(row=i+3, column=6).value >= 5:
+                    sheet_1.cell(row=i+3, column=4).fill = PatternFill(fgColor='C0C000', fill_type = "solid")
+                elif sheet_1.cell(row=i+3, column=6).value < 5:
+                    sheet_1.cell(row=i+3, column=4).fill = PatternFill(fgColor='00AF5F', fill_type = "solid")
+
+
+        link3 = "#'Inc due to blank-wise facility'!B2"
+        l3 = list(itertools.islice(excel_cols_link2(), dataframeForSheet5.shape[0]+1))
+
+        ##### Generating links 
+        k = 0
+        for i in range(len(FList2)):
+
+            if sheet_1.cell(row=i+3, column=5).value == 0:
+                k = k + 1 
+            if sheet_1.cell(row=i+3, column=5).value != 0 and sheet_1.cell(row=i+2, column=5).value == 0:
+                if k == 1:
+                    link3 = "#'Inc due to blank-wise facility'!"+ l3[i] +"2"
+                    print('i=', i, "cell=", sheet_1.cell(row=i+3, column=5), "Value=", sheet_1.cell(row=i+3, column=5).value, 'link=', link3)
+                elif k > 1:
+                    link3 = "#'Inc due to blank-wise facility'!"+ l3[i+1-k] +"2"
+                    print('i=', i, "cell=", sheet_1.cell(row=i+3, column=5), "Value=", sheet_1.cell(row=i+3, column=5).value, 'link=', link3)
+
+            elif sheet_1.cell(row=i+3, column=5).value != 0 and sheet_1.cell(row=i+2, column=5).value != 0:
+                link3 = "#'Inc due to blank-wise facility'!"+ l3[i+1-k] +"2"
+                print('i=', i, "celltype2=", sheet_1.cell(row=i+3, column=5), "Value=", sheet_1.cell(row=i+3, column=5).value, 'link=', link3)
+            else:
+                link3=None
+
+            sheet_1.cell(row=i+3, column=5).hyperlink = link3
+            sheet_1.cell(row=i+3, column=5).style = "Hyperlink"
+
+
+        cnt25, cnt26, cnt27, cnt28 = 0, 0, 0, 0
+        for i in range(len(FList2)):
+            if sheet_1.cell(row=i+3, column=7).value == None:
+                sheet_1.delete_rows(i+3, 1)
+            elif sheet_1.cell(row=i+3, column=7).value >= 25:
+                cnt25 += 1
+                sheet_1.cell(row=i+3, column=5).fill = PatternFill(fgColor='EF5350', fill_type = "solid")
+            elif sheet_1.cell(row=i+3, column=7).value < 25 and sheet_1.cell(row=i+3, column=7).value >= 10:
+                cnt26 += 1
+                sheet_1.cell(row=i+3, column=5).fill = PatternFill(fgColor='FFAF00', fill_type = "solid")
+            elif sheet_1.cell(row=i+3, column=7).value < 10 and sheet_1.cell(row=i+3, column=7).value >= 5:
+                cnt27 += 1
+                sheet_1.cell(row=i+3, column=5).fill = PatternFill(fgColor='C0C000', fill_type = "solid")
+            elif sheet_1.cell(row=i+3, column=7).value < 5:
+                cnt28 += 1
+                sheet_1.cell(row=i+3, column=5).fill = PatternFill(fgColor='00AF5F', fill_type = "solid")
+
+        ### RESPONSIBLE FOR EXPANDING FACILITY NAMES IN THE  (Inconsitency due to blank-wise facilities)
+        for i in range(dataframeForSheet5.shape[0]):   
+            ########### FILLING VALUES #####################
+            for j in range(len(FList2_copy[i])):
+                sheet_3.cell(row=j+5,column=i+2).value = FList2_copy[i][j]
+
+        
+        ### Coloring of Validation Summary Sheet
+        sheet_1['J5'] = "Color Brackets"
+        sheet_1['J6'].fill = PatternFill(fgColor="EF5350", fill_type = "solid")
+        sheet_1['J7'].fill = PatternFill(fgColor="FFAF00", fill_type = "solid")
+        sheet_1['J8'].fill = PatternFill(fgColor="C0C000", fill_type = "solid")
+        sheet_1['J9'].fill = PatternFill(fgColor="00AF5F", fill_type = "solid")
+
+        sheet_1['K5'] = "Range"
+        sheet_1['K6'] = ">= 25%"
+        sheet_1['K7'] = "10 - 25%"
+        sheet_1['K8'] = "5 - 10%"
+        sheet_1['K9'] = "< 5%"
+        sheet_1['K10'] = "Total Indicators"
+
+        sheet_1['L5'] = "Inconsistent"
+        sheet_1['L6'] = cnt21
+        sheet_1['L7'] = cnt22
+        sheet_1['L8'] = cnt23
+        sheet_1['L9'] = cnt24
+        sheet_1['L10'] = cnt21 + cnt22 + cnt23 + cnt24
+
+        sheet_1['M5'] = "Inconsistent due to blank"
+        sheet_1['M6'] = cnt25
+        sheet_1['M7'] = cnt26
+        sheet_1['M8'] = cnt27
+        sheet_1['M9'] = cnt28
+        sheet_1['M10'] = cnt25 + cnt26 + cnt27 + cnt28
+
+
+        ## Bordering Validation checkwise summary Sheet
+        for i in range(2, len(dataframeForSheet4)+3):
+            sheet_1.cell(row=i, column=2).border = thick_border
+            sheet_1.cell(row=i, column=3).border = thick_border
+            sheet_1.cell(row=i, column=4).border = thick_border
+            sheet_1.cell(row=i, column=5).border = thick_border
+
+        ### delete useless columns of sheet_1
+        sheet_1.delete_cols(6, 2)  
+
+        workbook.save(filename=filename)
+
+        '''
+        **************************************************************************************************
+        '''
+
+        '''
+        *********************************** sheet_2 :: Inconsistency-wise facilities ***********************************
+        '''
+
+        # # Attention Required Sheet (Inconsistent)
+        # # =======================================
+
+        # workbook.active = sheet_2
+        sheet_2.sheet_view.showGridLines = True
+
+        sheet_2['A1'] = "Inconsistency-wise facilities"
+        sheet_2.oddHeader.center.size = 18
+        sheet_2.oddHeader.center.font = "Tahoma,Bold"
+        sheet_2.oddHeader.center.color = "CC3366"
+        sheet_2['A1'].font = Font(size = 18, bold = True, color="003679")
+
+        ## RESPONSIBLE FOR EXPANDING FACILITY NAMES IN THE  (Inconsistency-wise facilities)
+        for j in range(len(FList1[i])):
+            sheet_2.cell(row=j+5,column=i+2).value = FList1[i][j]
+
+        sheet_2['A2'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_2['A3'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_2['A4'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_2['A5'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_2['A2'].font = Font(color = "FFFFFF")
+        sheet_2['A3'].font = Font(color = "FFFFFF")
+        sheet_2['A4'].font = Font(color = "FFFFFF")
+        sheet_2['A5'].font = Font(color = "FFFFFF")
+        sheet_2.column_dimensions['A'].width = 35
+        sheet_2.row_dimensions[2].height = 20
+        sheet_2.row_dimensions[3].height = 20
+        sheet_2.row_dimensions[4].height = 20
+        sheet_2.row_dimensions[5].height = 20   
+                
+        workbook.save(filename=filename)
+
+        '''
+        **************************************************************************************************
+        '''
+
+        '''
+        *********************************** sheet_3 :: Inconsitency due to blank-wise facilities ***********************************
+        '''
+
+        sheet_3.sheet_view.showGridLines = True
+        sheet_3['A1'] = "Inconsitency due to blank-wise facilities"
+        sheet_3.oddHeader.center.size = 18
+        sheet_3.oddHeader.center.font = "Tahoma,Bold"
+        sheet_3.oddHeader.center.color = "CC3366"
+        sheet_3['A1'].font = Font(size = 18, bold = True, color="003679")
+
+        ### RESPONSIBLE FOR EXPANDING FACILITY NAMES IN THE  (Inconsitency due to blank-wise facilities)
+        for i in range(dataframeForSheet5.shape[0]):   
+            ########### FILLING VALUES #####################
+            for j in range(len(FList2_copy[i])):
+                sheet_3.cell(row=j+5,column=i+2).value = FList2_copy[i][j]
+                
+            # Colors
+            for k in range(1, len(FList2[i])+100):
+                sheet_3.cell(row=4, column=i+1).alignment = Alignment(horizontal='center')
+                # sheet_3.cell(row=2, column=i+2).fill = PatternFill(fgColor="fff5be", fill_type = "solid")
+
+        sheet_3['A2'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_3['A3'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_3['A4'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_3['A5'].fill = PatternFill(fgColor="003679", fill_type = "solid")
+        sheet_3['A2'].font = Font(color = "FFFFFF")
+        sheet_3['A3'].font = Font(color = "FFFFFF")
+        sheet_3['A4'].font = Font(color = "FFFFFF")
+        sheet_3['A5'].font = Font(color = "FFFFFF")
+        sheet_3.column_dimensions['A'].width = 35
+        sheet_3.row_dimensions[2].height = 20
+        sheet_3.row_dimensions[3].height = 20
+        sheet_3.row_dimensions[4].height = 20
+        sheet_3.row_dimensions[5].height = 20 
+
+        workbook.save(filename=filename)
+        
+
+        '''
+        **************************************************************************************************
+        '''
+
+        from PyQt5.QtCore import QTimer
+
+        # Using QTimer to delay the QMessageBox
+        QTimer.singleShot(1000, self.show_message_box)
+
+        print("!!!!!!!!!!!!!!!!!!! $$$$$$$$$$$$$$$$$$$$ ******************** $$$$$$$$$$$$$$$$$$$$ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 
         # Create the messagebox object
         self.msg = QMessageBox()
         # Set the information icon
-        self.msg.setWindowIcon(QtGui.QIcon('checked.png'))
+        self.msg.setWindowIcon(QtGui.QIcon(self.resource_path('checked.png')))
         self.msg.setStyleSheet("QLabel { margin-right: 15px ; font-size: 18px; font-family: Arial;} QPushButton {background-color:lightgreen; font-family: Arial; font-size:20px;} ")
         # Set the main message
         self.msg.setText("Excel file downloaded in the selected location \n\n एक्सेल फ़ाइल चयनित स्थान पर डाउनलोड की गई।")
         # Set the title of the window
-        self.msg.setWindowTitle(" ")
+        self.msg.setWindowTitle(" Successful Download ")
         # Display the message box
         self.msg.show()
 
@@ -3857,7 +4429,7 @@ class Ui_TabWidget(QWidget):
         os.system('start Manual_ADVTool_English.pdf')
 
     def UserManualHindi(self):
-        os.system('start Manual_ADVTool_Hindi.pdf')
+        os.system('start Manual_ADVTool_English.pdf')
 
 
 if __name__ == "__main__":
